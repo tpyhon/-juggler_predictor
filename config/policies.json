@@ -1,0 +1,346 @@
+{
+  "_meta": {
+    "version": 1,
+    "description": "店舗別ポリシー. tune-policy ワークフローで最適化される. 評価メトリクスは data/policy_metrics.json に分離."
+  },
+  "_default": {
+    "k": 5,
+    "alpha": 0.7,
+    "go_require_topk_pwin_ge": [
+      0.6,
+      3
+    ],
+    "go_min_top1_pwin": 0.7,
+    "go_min_top1_pred_diff": 0,
+    "big_loss_yen": 30000,
+    "pwin_prefer": [
+      "p_win_raw",
+      "p_win",
+      "p_win_sigmoid",
+      "p_win_isotonic"
+    ]
+  },
+  "kingsetagaya": {
+    "k": 5,
+    "alpha": 0.7,
+    "go_require_topk_pwin_ge": [
+      0.6,
+      3
+    ],
+    "go_min_top1_pwin": 0.7,
+    "go_min_top1_pred_diff": 0,
+    "big_loss_yen": 30000,
+    "pwin_prefer": [
+      "p_win_raw",
+      "p_win",
+      "p_win_sigmoid",
+      "p_win_isotonic"
+    ]
+  },
+  "messekichijoji": {
+    "k": 5,
+    "alpha": 0.7,
+    "go_require_topk_pwin_ge": [
+      0.6,
+      3
+    ],
+    "go_min_top1_pwin": 0.7,
+    "go_min_top1_pred_diff": 0,
+    "big_loss_yen": 30000,
+    "pwin_prefer": [
+      "p_win_raw",
+      "p_win",
+      "p_win_sigmoid",
+      "p_win_isotonic"
+    ]
+  },
+  "godonsoshigaya": {
+    "k": 5,
+    "alpha": 0.7,
+    "go_require_topk_pwin_ge": [
+      0.6,
+      3
+    ],
+    "go_min_top1_pwin": 0.7,
+    "go_min_top1_pred_diff": 0,
+    "big_loss_yen": 30000,
+    "pwin_prefer": [
+      "p_win_raw",
+      "p_win",
+      "p_win_sigmoid",
+      "p_win_isotonic"
+    ]
+  },
+  "espas_seibushinjuku": {
+    "k": 5,
+    "alpha": 0.7,
+    "go_require_topk_pwin_ge": [
+      0.6,
+      3
+    ],
+    "go_min_top1_pwin": 0.7,
+    "go_min_top1_pred_diff": 0,
+    "big_loss_yen": 30000,
+    "pwin_prefer": [
+      "p_win_raw",
+      "p_win",
+      "p_win_sigmoid",
+      "p_win_isotonic"
+    ]
+  },
+  "espas_kabukicho": {
+    "k": 5,
+    "alpha": 0.7,
+    "go_require_topk_pwin_ge": [
+      0.6,
+      3
+    ],
+    "go_min_top1_pwin": 0.7,
+    "go_min_top1_pred_diff": 0,
+    "big_loss_yen": 30000,
+    "pwin_prefer": [
+      "p_win_raw",
+      "p_win",
+      "p_win_sigmoid",
+      "p_win_isotonic"
+    ]
+  },
+  "espas_shibuya": {
+    "k": 5,
+    "alpha": 0.7,
+    "go_require_topk_pwin_ge": [
+      0.6,
+      3
+    ],
+    "go_min_top1_pwin": 0.7,
+    "go_min_top1_pred_diff": 0,
+    "big_loss_yen": 30000,
+    "pwin_prefer": [
+      "p_win_raw",
+      "p_win",
+      "p_win_sigmoid",
+      "p_win_isotonic"
+    ]
+  },
+  "espas_shibuyanew": {
+    "k": 5,
+    "alpha": 0.7,
+    "go_require_topk_pwin_ge": [
+      0.6,
+      3
+    ],
+    "go_min_top1_pwin": 0.7,
+    "go_min_top1_pred_diff": 0,
+    "big_loss_yen": 30000,
+    "pwin_prefer": [
+      "p_win_raw",
+      "p_win",
+      "p_win_sigmoid",
+      "p_win_isotonic"
+    ]
+  },
+  "maruhan_shinjuku": {
+    "k": 5,
+    "alpha": 0.7,
+    "go_require_topk_pwin_ge": [
+      0.6,
+      3
+    ],
+    "go_min_top1_pwin": 0.7,
+    "go_min_top1_pred_diff": 0,
+    "big_loss_yen": 30000,
+    "pwin_prefer": [
+      "p_win_raw",
+      "p_win",
+      "p_win_sigmoid",
+      "p_win_isotonic"
+    ]
+  },
+  "maruhan_ikebukuro": {
+    "k": 5,
+    "alpha": 0.7,
+    "go_require_topk_pwin_ge": [
+      0.6,
+      3
+    ],
+    "go_min_top1_pwin": 0.7,
+    "go_min_top1_pred_diff": 0,
+    "big_loss_yen": 30000,
+    "pwin_prefer": [
+      "p_win_raw",
+      "p_win",
+      "p_win_sigmoid",
+      "p_win_isotonic"
+    ]
+  },
+  "espas_akihabara": {
+    "k": 5,
+    "alpha": 0.7,
+    "go_require_topk_pwin_ge": [
+      0.6,
+      3
+    ],
+    "go_min_top1_pwin": 0.7,
+    "go_min_top1_pred_diff": 0,
+    "big_loss_yen": 30000,
+    "pwin_prefer": [
+      "p_win_raw",
+      "p_win",
+      "p_win_sigmoid",
+      "p_win_isotonic"
+    ]
+  },
+  "mega_chofu": {
+    "k": 5,
+    "alpha": 0.7,
+    "go_require_topk_pwin_ge": [
+      0.6,
+      3
+    ],
+    "go_min_top1_pwin": 0.7,
+    "go_min_top1_pred_diff": 0,
+    "big_loss_yen": 30000,
+    "pwin_prefer": [
+      "p_win_raw",
+      "p_win",
+      "p_win_sigmoid",
+      "p_win_isotonic"
+    ]
+  },
+  "espas_takadanobaba": {
+    "k": 5,
+    "alpha": 0.7,
+    "go_require_topk_pwin_ge": [
+      0.6,
+      3
+    ],
+    "go_min_top1_pwin": 0.7,
+    "go_min_top1_pred_diff": 0,
+    "big_loss_yen": 30000,
+    "pwin_prefer": [
+      "p_win_raw",
+      "p_win",
+      "p_win_sigmoid",
+      "p_win_isotonic"
+    ]
+  },
+  "granpaNakano": {
+    "k": 5,
+    "alpha": 0.7,
+    "go_require_topk_pwin_ge": [
+      0.6,
+      3
+    ],
+    "go_min_top1_pwin": 0.7,
+    "go_min_top1_pred_diff": 0,
+    "big_loss_yen": 30000,
+    "pwin_prefer": [
+      "p_win_raw",
+      "p_win",
+      "p_win_sigmoid",
+      "p_win_isotonic"
+    ]
+  },
+  "granpaOkubo": {
+    "k": 5,
+    "alpha": 0.7,
+    "go_require_topk_pwin_ge": [
+      0.6,
+      3
+    ],
+    "go_min_top1_pwin": 0.7,
+    "go_min_top1_pred_diff": 0,
+    "big_loss_yen": 30000,
+    "pwin_prefer": [
+      "p_win_raw",
+      "p_win",
+      "p_win_sigmoid",
+      "p_win_isotonic"
+    ]
+  },
+  "sengawaUno": {
+    "k": 5,
+    "alpha": 0.7,
+    "go_require_topk_pwin_ge": [
+      0.6,
+      3
+    ],
+    "go_min_top1_pwin": 0.7,
+    "go_min_top1_pred_diff": 0,
+    "big_loss_yen": 30000,
+    "pwin_prefer": [
+      "p_win_raw",
+      "p_win",
+      "p_win_sigmoid",
+      "p_win_isotonic"
+    ]
+  },
+  "rakuen_shibuya": {
+    "k": 5,
+    "alpha": 0.7,
+    "go_require_topk_pwin_ge": [
+      0.6,
+      3
+    ],
+    "go_min_top1_pwin": 0.7,
+    "go_min_top1_pred_diff": 0,
+    "big_loss_yen": 30000,
+    "pwin_prefer": [
+      "p_win_raw",
+      "p_win",
+      "p_win_sigmoid",
+      "p_win_isotonic"
+    ]
+  },
+  "iidabashiPresas": {
+    "k": 5,
+    "alpha": 0.7,
+    "go_require_topk_pwin_ge": [
+      0.6,
+      3
+    ],
+    "go_min_top1_pwin": 0.7,
+    "go_min_top1_pred_diff": 0,
+    "big_loss_yen": 30000,
+    "pwin_prefer": [
+      "p_win_raw",
+      "p_win",
+      "p_win_sigmoid",
+      "p_win_isotonic"
+    ]
+  },
+  "espas_uenonew": {
+    "k": 5,
+    "alpha": 0.7,
+    "go_require_topk_pwin_ge": [
+      0.6,
+      3
+    ],
+    "go_min_top1_pwin": 0.7,
+    "go_min_top1_pred_diff": 0,
+    "big_loss_yen": 30000,
+    "pwin_prefer": [
+      "p_win_raw",
+      "p_win",
+      "p_win_sigmoid",
+      "p_win_isotonic"
+    ]
+  },
+  "espas_ueno": {
+    "k": 5,
+    "alpha": 0.7,
+    "go_require_topk_pwin_ge": [
+      0.6,
+      3
+    ],
+    "go_min_top1_pwin": 0.7,
+    "go_min_top1_pred_diff": 0,
+    "big_loss_yen": 30000,
+    "pwin_prefer": [
+      "p_win_raw",
+      "p_win",
+      "p_win_sigmoid",
+      "p_win_isotonic"
+    ]
+  }
+}

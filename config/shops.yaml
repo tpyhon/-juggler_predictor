@@ -1,0 +1,115 @@
+# 東京都(19 店舗)
+# 地方 21 店舗は P9 で追加
+- id: kingsetagaya
+  display_name: "キングNo.1世田谷店"
+  prefecture: 東京都
+  region: tokyo
+  note_plans: [master]
+
+- id: messekichijoji
+  display_name: "メッセ吉祥寺店"
+  prefecture: 東京都
+  region: tokyo
+  note_plans: [master]
+
+- id: godonsoshigaya
+  display_name: "ゴードン祖師谷店"
+  prefecture: 東京都
+  region: tokyo
+  note_plans: [master]
+
+- id: espas_seibushinjuku
+  display_name: "エスパス日拓西武新宿駅前店"
+  prefecture: 東京都
+  region: tokyo
+  note_plans: [master, shinjuku_shibuya_ikebukuro]
+
+- id: espas_kabukicho
+  display_name: "エスパス日拓新宿歌舞伎町店"
+  prefecture: 東京都
+  region: tokyo
+  note_plans: [master, shinjuku_shibuya_ikebukuro]
+
+- id: espas_shibuya
+  display_name: "エスパス日拓渋谷本館"
+  prefecture: 東京都
+  region: tokyo
+  note_plans: [master, shinjuku_shibuya_ikebukuro]
+
+- id: espas_shibuyanew
+  display_name: "エスパス日拓渋谷駅前新館"
+  prefecture: 東京都
+  region: tokyo
+  note_plans: [master, shinjuku_shibuya_ikebukuro]
+
+- id: maruhan_shinjuku
+  display_name: "マルハン新宿東宝ビル店"
+  prefecture: 東京都
+  region: tokyo
+  note_plans: [master, shinjuku_shibuya_ikebukuro]
+
+- id: maruhan_ikebukuro
+  display_name: "マルハン池袋店"
+  prefecture: 東京都
+  region: tokyo
+  note_plans: [master, shinjuku_shibuya_ikebukuro]
+
+- id: espas_akihabara
+  display_name: "エスパス日拓秋葉原駅前店"
+  prefecture: 東京都
+  region: tokyo
+  note_plans: [master]
+
+- id: mega_chofu
+  display_name: "メガガイア調布店"
+  prefecture: 東京都
+  region: tokyo
+  note_plans: [master]
+
+- id: espas_takadanobaba
+  display_name: "エスパス日拓高田馬場本店"
+  prefecture: 東京都
+  region: tokyo
+  note_plans: [master]
+
+- id: granpaNakano
+  display_name: "グランパ中野"
+  prefecture: 東京都
+  region: tokyo
+  note_plans: [master]
+
+- id: granpaOkubo
+  display_name: "グランパ大久保"
+  prefecture: 東京都
+  region: tokyo
+  note_plans: [master, shinjuku_shibuya_ikebukuro]
+
+- id: sengawaUno
+  display_name: "仙川UNO"
+  prefecture: 東京都
+  region: tokyo
+  note_plans: [master]
+
+- id: rakuen_shibuya
+  display_name: "楽園渋谷駅前店"
+  prefecture: 東京都
+  region: tokyo
+  note_plans: [master, shinjuku_shibuya_ikebukuro]
+
+- id: iidabashiPresas
+  display_name: "飯田橋プレサス"
+  prefecture: 東京都
+  region: tokyo
+  note_plans: [master]
+
+- id: espas_uenonew
+  display_name: "エスパス日拓上野新館"
+  prefecture: 東京都
+  region: tokyo
+  note_plans: [master]
+
+- id: espas_ueno
+  display_name: "エスパス日拓上野本館"
+  prefecture: 東京都
+  region: tokyo
+  note_plans: [master]

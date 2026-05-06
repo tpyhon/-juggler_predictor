@@ -1,0 +1,57 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# venv / uv
+.venv/
+venv/
+.uv-cache/
+
+# Distribution
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# 機密情報
+.env
+.env.local
+auth/*.json
+!auth/.gitkeep
+
+# データ・モデル
+data/
+!data/.gitkeep
+*.joblib
+*.pkl
+dataset/
+pred_cache/
+articles/
+
+# Playwright
+playwright-report/
+test-results/
+.playwright/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# ログ
+*.log
+logs/

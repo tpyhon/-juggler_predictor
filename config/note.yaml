@@ -1,0 +1,13 @@
+plans:
+  master: "マスタープラン"
+  shinjuku_shibuya_ikebukuro: "新宿・渋谷・池袋プラン"
+
+article:
+  title_format: "【{date}】{display_name}"
+  date_format: "%Y/%m/%d"
+
+publish:
+  show_on_creator_page: false
+  set_free_preview: true
+  member_only: true
+  headless: true
