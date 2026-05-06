@@ -241,23 +241,6 @@
       "p_win_isotonic"
     ]
   },
-  "granpaOkubo": {
-    "k": 5,
-    "alpha": 0.7,
-    "go_require_topk_pwin_ge": [
-      0.6,
-      3
-    ],
-    "go_min_top1_pwin": 0.7,
-    "go_min_top1_pred_diff": 0,
-    "big_loss_yen": 30000,
-    "pwin_prefer": [
-      "p_win_raw",
-      "p_win",
-      "p_win_sigmoid",
-      "p_win_isotonic"
-    ]
-  },
   "sengawaUno": {
     "k": 5,
     "alpha": 0.7,

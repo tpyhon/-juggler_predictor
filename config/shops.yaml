@@ -95,14 +95,6 @@
   note_plans:
   - master
   slug: グランパ中野
-- id: granpaOkubo
-  display_name: グランパ大久保
-  prefecture: 東京都
-  region: tokyo
-  note_plans:
-  - master
-  - shinjuku_shibuya_ikebukuro
-  slug: グランパ大久保
 - id: sengawaUno
   display_name: 仙川UNO
   prefecture: 東京都
