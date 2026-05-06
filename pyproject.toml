@@ -25,6 +25,7 @@ dependencies = [
     "tenacity>=9.0.0",
     "rich>=13.7.0",
     "requests>=2.32.0",
+    "playwright-stealth>=2.0.3",
 ]
 
 [project.optional-dependencies]

@@ -1,0 +1,193 @@
+======================================================================
+HTML 構造分析
+======================================================================
+
+--- 見出し (h1〜h4) ---
+  <h1 class=['entry-title']>: 2026/05/05 キングNo.1世田谷店 データまとめ
+  <h2 class=None>: 全体データ
+  <h2 class=None>: 機種別データピックアップ
+  <h2 class=None>: 末尾別データ
+  <h2 class=None>: 詳細データ
+  <h2 class=None>: 末尾毎詳細データ
+  <h3 class=['footerlogo']>: 
+  <h4 class=None>: 全データ一覧
+  <h4 class=None>: ネオアイムジャグラーEX
+  <h4 class=None>: 北斗の拳 転生の章2
+  <h4 class=None>: ゴーゴージャグラー3
+  <h4 class=None>: 東京喰種
+  <h4 class=None>: 甲鉄城のカバネリ 海門(うなと)決戦
+  <h4 class=None>: モンキーターンV
+  <h4 class=None>: ミリオンゴッド‐神々の軌跡‐
+  <h4 class=None>: 革命機ヴァルヴレイヴ2
+  <h4 class=None>: ファンキージャグラー2
+  <h4 class=None>: マイジャグラーV
+  <h4 class=None>: かぐや様は告らせたい
+  <h4 class=None>: ギルティクラウン2
+  <h4 class=None>: ゴッドイーター リザレクション
+  <h4 class=None>: デビル メイ クライ5 スタイリッシュトライブ
+  <h4 class=None>: 化物語
+  <h4 class=None>: 少女☆歌劇 レヴュースタァライト ‐The SLOT‐
+  <h4 class=None>: スマスロ炎炎ノ消防隊2
+  <h4 class=None>: マギアレコード 魔法少女まどか☆マギカ外伝
+  <h4 class=None>: モンスターハンターライズ
+  <h4 class=None>: 攻殻機動隊
+  <h4 class=None>: 新鬼武者3
+  <h4 class=None>: 東京リベンジャーズ
+  <h4 class=None>: 鉄拳6
+  <h4 class=None>: からくりサーカス
+  <h4 class=None>: ガールズ&パンツァー 最終章
+  <h4 class=None>: シャーマンキング
+  <h4 class=None>: スマスロ ハナビ
+  <h4 class=None>: スマスロ北斗の拳
+  <h4 class=None>: スーパーブラックジャック
+  <h4 class=None>: バジリスク～甲賀忍法帖～絆2 天膳 BLACK EDITION
+  <h4 class=None>: 交響詩篇エウレカセブン HI-EVOLUTION ZERO TYPE‐ART
+  <h4 class=None>: 回胴黙示録カイジ 狂宴
+  <h4 class=None>: 戦国乙女4 戦乱に閃く炯眼の軍師
+  <h4 class=None>: 真打 吉宗
+  <h4 class=None>: 革命機ヴァルヴレイヴ
+  <h4 class=None>: A‐SLOT+ 異世界かるてっと
+  <h4 class=None>: うみねこのなく頃に2
+  <h4 class=None>: ゴジラ対エヴァンゲリオン
+  <h4 class=None>: スマスロ サンダーV
+  <h4 class=None>: スマート沖スロ ドラゴンハナハナ～閃光～
+  <h4 class=None>: 沖ドキ!GOLD
+  <h4 class=None>: 聖戦士ダンバイン
+  <h4 class=None>: 1台設置機種
+  <h4 class=None>: 末尾0
+  <h4 class=None>: 末尾1
+  <h4 class=None>: 末尾2
+  <h4 class=None>: 末尾3
+  <h4 class=None>: 末尾4
+  <h4 class=None>: 末尾5
+  <h4 class=None>: 末尾6
+  <h4 class=None>: 末尾7
+  <h4 class=None>: 末尾8
+  <h4 class=None>: 末尾9
+  <h4 class=None>: 末尾ゾロ目
+
+--- 最初の 5 個の <table> -----
+  table[0] class=['total_get_medals_table'], rows=2
+    直前見出し: 全体データ
+    ヘッダ行: ['総差枚', '平均差枚', '平均G数', '勝率']
+    データ行例: ['+13,295', '+55', '4,926', '39.7%(96/242)']
+  table[1] class=['fixed_get_medals_table'], rows=243
+    直前見出し: 全データ一覧
+    ヘッダ行: ['機種名', '台番号', 'G数', '差枚', 'BB', 'RB', 'ART', '合成確率', 'BB確率', 'RB確率', 'ART確率']
+    データ行例: ['ネオアイムジャグラーEX', '1259', '5,523', '-1,472', '14', '20', '0', '1/162.4', '1/394.5', '1/276.1', '1/0.0']
+  table[2] class=None, rows=2
+    直前見出し: 機種別データピックアップ
+    ヘッダ行: ['機種別差枚', '平均差枚', '平均G数', '勝率']
+    データ行例: ['+39,395', '+3,030', '4,585', '84.6%(11/13)']
+  table[3] class=None, rows=2
+    直前見出し: 機種別データピックアップ
+    ヘッダ行: ['機種別差枚', '平均差枚', '平均G数', '勝率']
+    データ行例: ['+29,461', '+5,892', '4,437', '100.0%(5/5)']
+  table[4] class=None, rows=2
+    直前見出し: 機種別データピックアップ
+    ヘッダ行: ['機種別差枚', '平均差枚', '平均G数', '勝率']
+    データ行例: ['+26,096', '+8,699', '6,060', '66.7%(2/3)']
+
+--- 'ジャグラー' を含む見出し → 直後の table ---
+  ジャグラー見出し数: 4
+  <h4>: ネオアイムジャグラーEX
+     直後 table ヘッダ: ['台番号', 'G数', '差枚', 'BB', 'RB', '合成確率', 'BB確率', 'RB確率']
+     データ行 例:     ['1259', '5,523', '-1,472', '14', '20', '1/162.4', '1/394.5', '1/276.1']
+  <h4>: ゴーゴージャグラー3
+     直後 table ヘッダ: ['台番号', 'G数', '差枚', 'BB', 'RB', '合成確率', 'BB確率', 'RB確率']
+     データ行 例:     ['1280', '6,858', '-1,027', '20', '25', '1/152.4', '1/342.9', '1/274.3']
+  <h4>: ファンキージャグラー2
+     直後 table ヘッダ: ['台番号', 'G数', '差枚', 'BB', 'RB', '合成確率', 'BB確率', 'RB確率']
+     データ行 例:     ['1294', '7,958', '+1,086', '33', '23', '1/142.1', '1/241.2', '1/346.0']
+  <h4>: マイジャグラーV
+     直後 table ヘッダ: ['台番号', 'G数', '差枚', 'BB', 'RB', '合成確率', 'BB確率', 'RB確率']
+     データ行 例:     ['1301', '5,133', '-1,104', '16', '10', '1/197.4', '1/320.8', '1/513.3']
+
+--- 'マイジャグラー' 周辺の HTML 抜粋 ---
+ells">1/123.1</td>
+<td class="table_cells">1/195.7</td>
+<td class="table_cells">1/331.9</td>
+<td class="table_cells">1/0.0</td>
+</tr>
+<tr>
+<td class="fixed01" style="font-size:14px;line-height:150%;">マイジャグラーV</td>
+<td class="table_cells">1301</td>
+<td class="table_cells">5,133</td>
+<td class="table_cells">-1,104</td>
+<td class="table_cells">16</td>
+<td class="table_cells">10</td>
+<td class="table_cells">0</td>
+<td class="table_cells">1/197.4</td>
+<td class="table_cells">1/320.8</td>
+<td class="table_cells">1/513.3</td>
+<td class="table_cells">1/0.0</td>
+</tr>
+<tr>
+<td class="fixed01" style="font-size:14px;line-height:150%;">マイジャグラーV</td>
+<td class="table_cells">1302</td>
+<td class="table_cells">8,271</td>
+<td class="table_cells">-368</td>
+<td class="table_cells">31</td>
+<td class="table_cells">18</td>
+<td class="table_cells">0</td>
+<td class="table_cells">1/168.8</td>
+<td class="table_cells">1/266.8</td>
+<td class="table_cells">1/459.5</td>
+<td class="table_cells">1/0.0</td>
+</tr>
+<tr>
+<td class="fixed01" style="font-size:14px;line-height:150%;">マイジャグラーV</td>
+<td class="table_cells">1303</td>
+<td class="table_cells">5,444</td>
+<td class="table_cells">-1,583</td>
+<td class="table_cells">14</td>
+<td class="table_cells">18</td>
+<td class="table_cells">0</td>
+<td class="table_cells">1/170.1</td>
+<td class="table_cells">1/388.9</td>
+<td class="table_cells">1/302.4</td>
+<td class="table_cells">1/0.0</td>
+</tr>
+<tr>
+<td class="fixed01" style="font-size:14px;line-height:150%;">マイジャグラーV</td>
+<td class="table_cells">1304</td>
+<td class="table_cells">7,239</td>
+<td class="table_cells">+708</td>
+<td class="table_cells">30</td>
+<td class="table_cells">22</td>
+<td class="table_cells">0
+
+--- 重要キーワード位置 ---
+  '台番号': 見つかった (位置 34636)
+  '台番': 見つかった (位置 34636)
+  '機種名': 見つかった (位置 34632)
+  '総ゲーム数': 見つからず
+  'G数': 見つかった (位置 1067)
+  'BB回数': 見つからず
+  'RB回数': 見つからず
+  '差枚': 見つかった (位置 1057)
+  '差枚数': 見つからず
+  'ボーナス合算': 見つからず
+  '合成確率': 見つかった (位置 34931)
+
+--- 主要 class 名 TOP20 (table/tr/td/div 内) ---
+  .table_cells: 7537
+  .fixed01: 523
+  .tab-content_item: 108
+  .last_digit_data_cells: 55
+  .is-active: 54
+  .scrollable-table: 43
+  .fixed-scrollable-table: 13
+  .fixed_get_medals_table: 13
+  .clearfix: 4
+  .st-widgets-box: 2
+  .widget_block: 2
+  .st-h-ad: 2
+  .js-tab-target-0: 2
+  .js-tab-target-1: 2
+  .js-tab-target-2: 2
+  .js-tab-target-3: 2
+  .js-tab-target-4: 2
+  .js-tab-target-5: 2
+  .js-tab-target-6: 2
+  .js-tab-target-7: 2

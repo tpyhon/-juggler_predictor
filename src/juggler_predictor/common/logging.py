@@ -59,3 +59,13 @@ def get_logger(name: str) -> logging.Logger:
     if not _CONFIGURED:
         configure_logging()
     return logging.getLogger(name)
+
+# ---------------------------------------------------------------------------
+# 後方互換: setup_logging エイリアス
+# ---------------------------------------------------------------------------
+def setup_logging(level: str | None = None) -> None:
+    """:func:`configure_logging` のエイリアス。
+
+    scripts/ から ``setup_logging`` 名で参照されるため互換用に追加。
+    """
+    configure_logging(level)

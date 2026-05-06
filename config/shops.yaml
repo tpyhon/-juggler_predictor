@@ -1,115 +1,141 @@
-# 東京都(19 店舗)
-# 地方 21 店舗は P9 で追加
 - id: kingsetagaya
-  display_name: "キングNo.1世田谷店"
+  display_name: キングNo.1世田谷店
   prefecture: 東京都
   region: tokyo
-  note_plans: [master]
-
+  note_plans:
+  - master
+  slug: キングno-1世田谷店
 - id: messekichijoji
-  display_name: "メッセ吉祥寺店"
+  display_name: メッセ吉祥寺店
   prefecture: 東京都
   region: tokyo
-  note_plans: [master]
-
+  note_plans:
+  - master
+  slug: メッセ吉祥寺店本館
 - id: godonsoshigaya
-  display_name: "ゴードン祖師谷店"
+  display_name: ゴードン祖師谷店
   prefecture: 東京都
   region: tokyo
-  note_plans: [master]
-
+  note_plans:
+  - master
+  slug: ゴードン祖師谷店
 - id: espas_seibushinjuku
-  display_name: "エスパス日拓西武新宿駅前店"
+  display_name: エスパス日拓西武新宿駅前店
   prefecture: 東京都
   region: tokyo
-  note_plans: [master, shinjuku_shibuya_ikebukuro]
-
+  note_plans:
+  - master
+  - shinjuku_shibuya_ikebukuro
+  slug: エスパス日拓西武新宿駅前店
 - id: espas_kabukicho
-  display_name: "エスパス日拓新宿歌舞伎町店"
+  display_name: エスパス日拓新宿歌舞伎町店
   prefecture: 東京都
   region: tokyo
-  note_plans: [master, shinjuku_shibuya_ikebukuro]
-
+  note_plans:
+  - master
+  - shinjuku_shibuya_ikebukuro
+  slug: エスパス日拓新宿歌舞伎町店
 - id: espas_shibuya
-  display_name: "エスパス日拓渋谷本館"
+  display_name: エスパス日拓渋谷本館
   prefecture: 東京都
   region: tokyo
-  note_plans: [master, shinjuku_shibuya_ikebukuro]
-
+  note_plans:
+  - master
+  - shinjuku_shibuya_ikebukuro
+  slug: エスパス日拓渋谷本館
 - id: espas_shibuyanew
-  display_name: "エスパス日拓渋谷駅前新館"
+  display_name: エスパス日拓渋谷駅前新館
   prefecture: 東京都
   region: tokyo
-  note_plans: [master, shinjuku_shibuya_ikebukuro]
-
+  note_plans:
+  - master
+  - shinjuku_shibuya_ikebukuro
+  slug: エスパス日拓渋谷駅前新館
 - id: maruhan_shinjuku
-  display_name: "マルハン新宿東宝ビル店"
+  display_name: マルハン新宿東宝ビル店
   prefecture: 東京都
   region: tokyo
-  note_plans: [master, shinjuku_shibuya_ikebukuro]
-
+  note_plans:
+  - master
+  - shinjuku_shibuya_ikebukuro
+  slug: マルハン新宿東宝ビル店
 - id: maruhan_ikebukuro
-  display_name: "マルハン池袋店"
+  display_name: マルハン池袋店
   prefecture: 東京都
   region: tokyo
-  note_plans: [master, shinjuku_shibuya_ikebukuro]
-
+  note_plans:
+  - master
+  - shinjuku_shibuya_ikebukuro
+  slug: マルハン池袋店
 - id: espas_akihabara
-  display_name: "エスパス日拓秋葉原駅前店"
+  display_name: エスパス日拓秋葉原駅前店
   prefecture: 東京都
   region: tokyo
-  note_plans: [master]
-
+  note_plans:
+  - master
+  slug: エスパス日拓秋葉原駅前店
 - id: mega_chofu
-  display_name: "メガガイア調布店"
+  display_name: メガガイア調布店
   prefecture: 東京都
   region: tokyo
-  note_plans: [master]
-
+  note_plans:
+  - master
+  slug: メガガイア調布店
 - id: espas_takadanobaba
-  display_name: "エスパス日拓高田馬場本店"
+  display_name: エスパス日拓高田馬場本店
   prefecture: 東京都
   region: tokyo
-  note_plans: [master]
-
+  note_plans:
+  - master
+  slug: エスパス日拓高田馬場本店
 - id: granpaNakano
-  display_name: "グランパ中野"
+  display_name: グランパ中野
   prefecture: 東京都
   region: tokyo
-  note_plans: [master]
-
+  note_plans:
+  - master
+  slug: グランパ中野
 - id: granpaOkubo
-  display_name: "グランパ大久保"
+  display_name: グランパ大久保
   prefecture: 東京都
   region: tokyo
-  note_plans: [master, shinjuku_shibuya_ikebukuro]
-
+  note_plans:
+  - master
+  - shinjuku_shibuya_ikebukuro
+  slug: グランパ大久保
 - id: sengawaUno
-  display_name: "仙川UNO"
+  display_name: 仙川UNO
   prefecture: 東京都
   region: tokyo
-  note_plans: [master]
-
+  note_plans:
+  - master
+  slug: 仙川uno
 - id: rakuen_shibuya
-  display_name: "楽園渋谷駅前店"
+  display_name: 楽園渋谷駅前店
   prefecture: 東京都
   region: tokyo
-  note_plans: [master, shinjuku_shibuya_ikebukuro]
-
+  note_plans:
+  - master
+  - shinjuku_shibuya_ikebukuro
+  slug: 楽園渋谷駅前店
 - id: iidabashiPresas
-  display_name: "飯田橋プレサス"
+  display_name: 飯田橋プレサス
   prefecture: 東京都
   region: tokyo
-  note_plans: [master]
-
+  note_plans:
+  - master
+  slug: 飯田橋プレサス
 - id: espas_uenonew
-  display_name: "エスパス日拓上野新館"
+  display_name: エスパス日拓上野新館
   prefecture: 東京都
   region: tokyo
-  note_plans: [master]
-
+  note_plans:
+  - master
+  slug: エスパス日拓上野新館
 - id: espas_ueno
-  display_name: "エスパス日拓上野本館"
+  display_name: エスパス日拓上野本館
   prefecture: 東京都
   region: tokyo
-  note_plans: [master]
+  note_plans:
+  - master
+  slug: エスパス日拓上野本館
