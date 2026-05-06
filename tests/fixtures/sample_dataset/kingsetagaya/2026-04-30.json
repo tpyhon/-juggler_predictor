@@ -1,0 +1,37 @@
+{
+  "shop_display_name": "キングNo.1世田谷店",
+  "date_str": "2026-04-30",
+  "rows": [
+    {
+      "machine_name": "マイジャグラーV",
+      "machine_name_raw": "マイジャグラーV",
+      "unit_number": "1",
+      "unit_number_raw": "1",
+      "g_count": 6000,
+      "diff": 2200,
+      "bb": 28,
+      "rb": 14,
+      "art": null,
+      "composite_prob": "1/142.85",
+      "bb_prob": "1/214",
+      "rb_prob": "1/428",
+      "art_prob": null
+    },
+    {
+      "machine_name": "ネオアイムジャグラーEX",
+      "machine_name_raw": "ネオアイムジャグラーEX",
+      "unit_number": "2",
+      "unit_number_raw": "2",
+      "g_count": 5200,
+      "diff": 300,
+      "bb": 18,
+      "rb": 11,
+      "art": null,
+      "composite_prob": "1/179.31",
+      "bb_prob": "1/289",
+      "rb_prob": "1/472",
+      "art_prob": null
+    }
+  ],
+  "total_rows_in_table": 55
+}

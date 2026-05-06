@@ -1,0 +1,22 @@
+{
+  "shop_display_name": "メッセ吉祥寺店本館",
+  "date_str": "2026-05-05",
+  "rows": [
+    {
+      "machine_name": "マイジャグラーV",
+      "machine_name_raw": "マイジャグラーV",
+      "unit_number": "11",
+      "unit_number_raw": "11",
+      "g_count": 4800,
+      "diff": 1800,
+      "bb": 22,
+      "rb": 12,
+      "art": null,
+      "composite_prob": "1/141.18",
+      "bb_prob": "1/218",
+      "rb_prob": "1/400",
+      "art_prob": null
+    }
+  ],
+  "total_rows_in_table": 40
+}

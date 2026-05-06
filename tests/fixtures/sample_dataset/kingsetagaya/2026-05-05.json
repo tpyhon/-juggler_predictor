@@ -1,0 +1,22 @@
+{
+  "shop_display_name": "キングNo.1世田谷店",
+  "date_str": "2026-05-05",
+  "rows": [
+    {
+      "machine_name": "マイジャグラーV",
+      "machine_name_raw": "マイジャグラーV",
+      "unit_number": "1",
+      "unit_number_raw": "1",
+      "g_count": 5500,
+      "diff": -500,
+      "bb": 18,
+      "rb": 10,
+      "art": null,
+      "composite_prob": "1/196.42",
+      "bb_prob": "1/305",
+      "rb_prob": "1/550",
+      "art_prob": null
+    }
+  ],
+  "total_rows_in_table": 60
+}
