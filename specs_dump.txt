@@ -1,0 +1,1244 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+JugAnalyzer_universal.py
+
+目的:
+- 各店舗の shops/<shop>/ana_slo_all.json を入力として、
+  JugAnalyzer_kingsetagaya_v4.py と同等の “運用I/F（出力項目）” を生成する汎用 JugAnalyzer。
+
+最低限の契約（backtest 必須6キー）:
+- machine_name
+- unit_number
+- predicted_diff
+- p_win
+- final_score
+- final_score_100
+
+重要仕様:
+- predicted_diff は学習/推論で clip（CLIP_DIFF=2000）し、外れ値影響を抑える
+- p_win は「店内共通モデル + 校正(sigmoid/isotonic条件付き)」で安定化
+- model bundle キャッシュ（model_bundle__ALL.joblib）を維持（再学習コスト削減）
+
+参考（互換対象）:
+- JugAnalyzer_kingsetagaya_v4.py の predicted_diff clip / global p_win / model bundle / final_score / final_score_100
+  [Source](https://www.genspark.ai/api/files/s/rJxsWedv)
+"""
+
+import sys
+import os
+import re
+import json
+import warnings
+from dataclasses import dataclass
+from datetime import datetime
+import traceback
+
+import numpy as np
+import pandas as pd
+import joblib
+
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.preprocessing import StandardScaler
+from sklearn.calibration import CalibratedClassifierCV
+# sklearn>=1.6 系では cv="prefit" の代替として FrozenEstimator を使う
+try:
+    from sklearn.frozen import FrozenEstimator
+except Exception:
+    FrozenEstimator = None
+try:
+    from lightgbm import LGBMClassifier
+except Exception:
+    LGBMClassifier = None
+
+warnings.filterwarnings("ignore")
+
+
+# ------------------------------
+# Universal config defaults
+# ------------------------------
+CLIP_DIFF = 2000.0  # [-2000, 2000]
+
+
+# ------------------------------
+# Specs (copied from v4/v5)
+# ------------------------------
+JUGGLER_SPECS = {
+    "マイジャグラーV": {
+        "BB": [1/273.1, 1/268.6, 1/262.1, 1/252.1, 1/242.7, 1/234.1],
+        "RB": [1/409.6, 1/352.3, 1/334.4, 1/315.1, 1/281.1, 1/234.1],
+        "合成": [1/163.8, 1/156.0, 1/147.6, 1/140.6, 1/127.5, 1/114.6],
+        "機械割": [97.0, 98.7, 100.8, 103.6, 105.8, 109.4]
+    },
+    "ネオアイムジャグラーEX": {
+        "BB": [1/269.7, 1/264.3, 1/259.0, 1/248.2, 1/238.3, 1/228.5],
+        "RB": [1/431.2, 1/364.1, 1/334.4, 1/318.1, 1/292.6, 1/255.0],
+        "合成": [1/165.9, 1/153.0, 1/146.1, 1/139.6, 1/131.1, 1/120.5],
+        "機械割": [96.6, 98.9, 101.0, 103.4, 105.4, 109.0]
+    },
+    "ゴーゴージャグラー3": {
+        "BB": [1/273.1, 1/268.6, 1/259.0, 1/247.3, 1/240.9, 1/229.1],
+        "RB": [1/528.5, 1/397.2, 1/334.4, 1/318.1, 1/282.5, 1/234.1],
+        "合成": [1/180.1, 1/160.0, 1/146.1, 1/139.3, 1/131.0, 1/115.9],
+        "機械割": [96.5, 98.7, 101.9, 103.8, 106.0, 110.1]
+    },
+    "ファンキージャグラー2": {
+        "BB": [1/287.4, 1/273.1, 1/268.6, 1/259.0, 1/251.1, 1/240.9],
+        "RB": [1/431.2, 1/381.0, 1/348.6, 1/315.1, 1/297.9, 1/268.6],
+        "合成": [1/172.5, 1/159.1, 1/151.7, 1/142.2, 1/136.3, 1/127.5],
+        "機械割": [96.4, 98.6, 100.7, 103.3, 105.3, 108.5]
+    },
+    "アイムジャグラーEX-TP": {
+        "BB": [1/287.4, 1/273.1, 1/273.1, 1/268.6, 1/259.0, 1/251.1],
+        "RB": [1/431.2, 1/364.1, 1/324.4, 1/303.4, 1/287.4, 1/268.6],
+        "合成": [1/172.5, 1/156.0, 1/148.6, 1/142.9, 1/137.7, 1/129.4],
+        "機械割": [96.4, 99.9, 102.0, 104.0, 106.0, 109.2]
+    },
+    "ハッピージャグラーVIII": {
+        "BB": [1/273.1, 1/270.8, 1/263.2, 1/254.0, 1/239.2, 1/226.0],
+        "RB": [1/397.2, 1/362.1, 1/332.7, 1/300.6, 1/273.1, 1/256.0],
+        "合成": [1/161.8, 1/154.9, 1/146.9, 1/137.7, 1/127.5, 1/120.0],
+        "機械割": [97.0, 98.1, 99.9, 102.9, 105.8, 108.4]
+    },
+    "ミスタージャグラー": {
+        "BB": [1/268.6, 1/267.5, 1/260.1, 1/249.2, 1/240.9, 1/237.4],
+        "RB": [1/374.5, 1/354.2, 1/331.0, 1/291.3, 1/257.0, 1/237.4],
+        "合成": [1/156.4, 1/152.4, 1/145.6, 1/134.3, 1/124.4, 1/118.7],
+        "機械割": [97.0, 98.0, 99.8, 102.7, 105.5, 107.3]
+    },
+    "ジャグラーガールズSS": {
+        "BB": [1/273.1, 1/270.8, 1/260.1, 1/250.1, 1/243.6, 1/226.0],
+        "RB": [1/381.0, 1/350.5, 1/316.6, 1/281.3, 1/270.8, 1/252.1],
+        "合成": [1/159.1, 1/152.8, 1/142.8, 1/132.4, 1/128.3, 1/119.2],
+        "機械割": [97.0, 97.9, 99.9, 102.1, 104.0, 107.5]
+    },
+    "ウルトラミラクルジャグラー": {
+        "BB": [1/267.5, 1/261.1, 1/256.0, 1/242.7, 1/233.2, 1/216.3],
+        "RB": [1/425.6, 1/402.1, 1/350.5, 1/322.8, 1/297.9, 1/277.7],
+        "合成": [1/164.3, 1/158.3, 1/147.9, 1/138.6, 1/130.8, 1/121.6],
+        "機械割": [97.0, 98.1, 99.8, 102.1, 104.5, 108.1]
+    }
+}
+
+
+# ------------------------------
+# utils
+# ------------------------------
+def parse_prob(prob_str):
+    if not prob_str or prob_str == "1/0.0":
+        return 0.0
+    try:
+        parts = str(prob_str).split("/")
+        if len(parts) == 2:
+            numerator = float(parts[0])
+            denominator = float(parts[1])
+            if denominator > 0:
+                return numerator / denominator
+    except Exception:
+        pass
+    return 0.0
+
+
+def clamp(x, lo, hi):
+    return max(lo, min(hi, x))
+
+
+def safe_float(x, default=None):
+    try:
+        if x is None:
+            return default
+        return float(x)
+    except Exception:
+        return default
+
+
+def clip_value(x, lim):
+    if x is None:
+        return None
+    try:
+        v = float(x)
+    except Exception:
+        return None
+    if v > lim:
+        return lim
+    if v < -lim:
+        return -lim
+    return v
+
+
+def normalize_machine_name(s: str) -> str:
+    if s is None:
+        return ""
+    s = str(s).replace("\u3000", " ")
+    s = " ".join(s.split())
+    return s.strip()
+
+
+def normalize_unit_number(u):
+    if u is None:
+        return ""
+    s = str(u).strip()
+    if s.isdigit():
+        return str(int(s))
+    return s
+
+
+def load_json(path: str):
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def save_json(obj, path: str):
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(obj, f, ensure_ascii=False, indent=2)
+
+
+@dataclass
+class UniversalShopConfig:
+    shop: str = ""
+    juggler_keywords: tuple = ("ジャグラー", "ジャグ")
+    active_within_days: int = 30  # 稼働台とみなす期間
+    min_unit_days_for_features: int = 20
+    min_feature_rows_for_training_per_unit: int = 25
+    min_train_rows_per_machine: int = 120
+
+    # scoring (default = kingsetagaya v4互換)
+    score_w_pwin: float = 0.72
+    score_w_diff: float = 0.22
+    score_w_p4: float = 0.06
+
+    # calibration
+    isotonic_min_samples: int = 1000
+
+
+class JugAnalyzerUniversal:
+    def __init__(self, data_file: str, shop_config: UniversalShopConfig):
+        self.data_file = data_file
+        self.cfg = shop_config
+
+        print("=" * 80)
+        print(f"JugAnalyzer Universal | shop={self.cfg.shop or '(auto)'}")
+        print("=" * 80)
+
+        self.data = load_json(data_file)
+        self.df = self._create_dataframe()
+        self.df = self.df[
+            ["date", "display_name", "unit_number", "games", "diff_medals",
+             "bb_prob", "rb_prob", "combined_prob", "dayofweek", "dayname"]
+        ].copy()
+
+        # model stores (bundle cache)
+        self.models = {}
+        self.scalers = {}
+        self.lgbm_models = {}
+        self.lgbm_meta = {}
+
+        # global p_win model + calibration (v4 compatibility)
+        self.global_win = {"model": None, "kind": None, "feature_cols": None}
+        self.global_win_cal = {"sigmoid": None, "isotonic": None, "meta": {}}
+
+        self.predictions = {}
+
+    # ------------------------------
+    # bundle cache (v4 compatible)
+    # ------------------------------
+    def _get_model_dir(self, output_dir: str, model_dir: str = None) -> str:
+        base = model_dir if model_dir else os.path.join(output_dir, "models")
+        os.makedirs(base, exist_ok=True)
+        return base
+
+    def _model_bundle_path(self, output_dir: str, model_dir: str = None) -> str:
+        md = self._get_model_dir(output_dir, model_dir=model_dir)
+        return os.path.join(md, "model_bundle__ALL.joblib")
+
+    def save_model_bundle(self, output_dir: str, model_dir: str = None) -> str:
+        payload = {
+            "saved_at": datetime.now().isoformat(),
+            "models": self.models,
+            "scalers": self.scalers,
+            "lgbm_models": getattr(self, "lgbm_models", {}),
+            "lgbm_meta": getattr(self, "lgbm_meta", {}),
+            "global_win": getattr(self, "global_win", {}),
+            "global_win_cal": getattr(self, "global_win_cal", {}),
+            "meta": {
+                "script": "JugAnalyzer_universal",
+                "clip_diff_limit": float(CLIP_DIFF),
+                "shop": self.cfg.shop,
+            },
+        }
+        p = self._model_bundle_path(output_dir, model_dir=model_dir)
+        joblib.dump(payload, p)
+        return p
+
+    def load_model_bundle(self, output_dir: str, model_dir: str = None) -> bool:
+        p = self._model_bundle_path(output_dir, model_dir=model_dir)
+        if not os.path.exists(p):
+            return False
+        payload = joblib.load(p)
+
+        self.models = payload.get("models", {}) or {}
+        self.scalers = payload.get("scalers", {}) or {}
+        self.lgbm_models = payload.get("lgbm_models", {}) or {}
+        self.lgbm_meta = payload.get("lgbm_meta", {}) or {}
+
+        self.global_win = payload.get("global_win", {}) or {"model": None, "kind": None, "feature_cols": None}
+        self.global_win_cal = payload.get("global_win_cal", {}) or {"sigmoid": None, "isotonic": None, "meta": {}}
+        return True
+
+    # ------------------------------
+    # dataframe build
+    # ------------------------------
+    def _create_dataframe(self):
+        records = []
+        for machine in self.data.get("machines", []) or []:
+            machine_id = machine.get("machine_id")
+            display_name = machine.get("display_name")
+
+            for unit_info in machine.get("units", []) or []:
+                unit_number = unit_info.get("unit_number", "")
+
+                for daily in machine.get("daily", []) or []:
+                    date = daily.get("date")
+                    for unit_daily in daily.get("units", []) or []:
+                        if unit_daily.get("unit_number") != unit_number:
+                            continue
+                        if (unit_daily.get("flags") or {}).get("is_missing", False):
+                            continue
+                        metrics = unit_daily.get("metrics", {}) or {}
+                        rates = unit_daily.get("rates", {}) or {}
+                        records.append({
+                            "date": date,
+                            "machine_id": machine_id,
+                            "display_name": display_name,
+                            "unit_number": unit_number,
+                            "games": metrics.get("games", 0),
+                            "diff_medals": metrics.get("diff_medals", 0),
+                            "bb": metrics.get("bb", 0),
+                            "rb": metrics.get("rb", 0),
+                            "bb_prob": parse_prob(rates.get("bb_prob", "")),
+                            "rb_prob": parse_prob(rates.get("rb_prob", "")),
+                            "combined_prob": parse_prob(rates.get("combined_prob", "")),
+                        })
+
+        df = pd.DataFrame(records)
+        if len(df) == 0:
+            df = pd.DataFrame(columns=[
+                "date", "machine_id", "display_name", "unit_number", "games", "diff_medals",
+                "bb", "rb", "bb_prob", "rb_prob", "combined_prob"
+            ])
+        df["date"] = pd.to_datetime(df["date"], errors="coerce")
+        df = df.dropna(subset=["date"]).copy()
+        df["dayofweek"] = df["date"].dt.dayofweek
+        df["dayname"] = df["date"].dt.day_name()
+        return df
+
+    # ------------------------------
+    # juggler filter / spec mapping
+    # ------------------------------
+    def _extract_juggler_units(self):
+        kws = self.cfg.juggler_keywords
+        juggler_units = []
+        if len(self.df) == 0:
+            return []
+        latest_date = self.df["date"].max()
+
+        for (machine_name, unit_number), group in self.df.groupby(["display_name", "unit_number"]):
+            if any(k in str(machine_name) for k in kws):
+                last_operation = group["date"].max()
+                days_since_last = (latest_date - last_operation).days
+                if days_since_last <= int(self.cfg.active_within_days):
+                    juggler_units.append({
+                        "machine_name": machine_name,
+                        "unit_number": unit_number,
+                        "data_count": int(len(group)),
+                    })
+        return sorted(juggler_units, key=lambda x: (str(x["machine_name"]), str(x["unit_number"])))
+
+    def _find_spec_name(self, machine_name):
+        for spec_name in JUGGLER_SPECS.keys():
+            if spec_name in str(machine_name):
+                return spec_name
+        return None
+
+    def _estimate_setting(self, combined_prob, diff_medals, machine_name):
+        spec_name = self._find_spec_name(machine_name)
+        if spec_name and spec_name in JUGGLER_SPECS and combined_prob > 0:
+            distances = [(i + 1, abs(combined_prob - sp)) for i, sp in enumerate(JUGGLER_SPECS[spec_name]["合成"])]
+            return min(distances, key=lambda x: x[1])[0]
+        else:
+            # fallback heuristic (v4 compatible)
+            if diff_medals > 1500:
+                return 6
+            elif diff_medals > 500:
+                return 5
+            elif diff_medals > 0:
+                return 4
+            elif diff_medals > -500:
+                return 3
+            elif diff_medals > -1000:
+                return 2
+            else:
+                return 1
+
+    # ------------------------------
+    # features
+    # ------------------------------
+    def _create_features(self, machine_name, unit_number):
+        unit_df = self.df[
+            (self.df["display_name"] == machine_name) &
+            (self.df["unit_number"] == unit_number)
+        ].copy()
+
+        unit_df = unit_df[unit_df["games"] > 0].sort_values("date").reset_index(drop=True)
+        if len(unit_df) < int(self.cfg.min_unit_days_for_features):
+            return None
+
+        features_list = []
+        for idx in range(len(unit_df)):
+            row = unit_df.iloc[idx]
+            features = {}
+
+            features["games"] = float(row["games"])
+            features["diff_medals"] = float(row["diff_medals"])
+            features["abs_diff"] = abs(float(row["diff_medals"]))
+
+            features["bb_prob"] = float(row["bb_prob"]) if float(row["bb_prob"]) > 0 else 1/500
+            features["rb_prob"] = float(row["rb_prob"]) if float(row["rb_prob"]) > 0 else 1/500
+            features["combined_prob"] = float(row["combined_prob"]) if float(row["combined_prob"]) > 0 else 1/500
+            features["bb_rb_ratio"] = features["bb_prob"] / features["rb_prob"] if features["rb_prob"] > 0 else 1.0
+
+            spec_name = self._find_spec_name(machine_name)
+            if spec_name and spec_name in JUGGLER_SPECS:
+                specs = JUGGLER_SPECS[spec_name]
+                features["combined_vs_setting6"] = features["combined_prob"] / specs["合成"][5]
+                features["combined_vs_setting1"] = features["combined_prob"] / specs["合成"][0]
+            else:
+                features["combined_vs_setting6"] = 1.0
+                features["combined_vs_setting1"] = 1.0
+
+            if idx > 0:
+                prev_row = unit_df.iloc[idx - 1]
+                prev_comb = float(prev_row["combined_prob"]) if float(prev_row["combined_prob"]) > 0 else 1/500
+                features["prev_1d_diff"] = float(prev_row["diff_medals"])
+                features["prev_1d_games"] = float(prev_row["games"])
+                features["prev_1d_combined_prob"] = prev_comb
+                features["prev_1d_setting"] = int(self._estimate_setting(prev_comb, float(prev_row["diff_medals"]), machine_name))
+                features["prev_1d_is_high_diff"] = 1 if float(prev_row["diff_medals"]) > 1000 else 0
+                features["prev_1d_is_low_diff"] = 1 if float(prev_row["diff_medals"]) < -500 else 0
+            else:
+                features["prev_1d_diff"] = 0.0
+                features["prev_1d_games"] = 0.0
+                features["prev_1d_combined_prob"] = 1/500
+                features["prev_1d_setting"] = 3
+                features["prev_1d_is_high_diff"] = 0
+                features["prev_1d_is_low_diff"] = 0
+
+            past_7 = unit_df.iloc[max(0, idx - 7):idx]
+            if len(past_7) > 0:
+                features["avg_games_7d"] = float(past_7["games"].mean())
+                features["avg_diff_7d"] = float(past_7["diff_medals"].mean())
+                features["win_rate_7d"] = float((past_7["diff_medals"] > 0).mean())
+                features["max_diff_7d"] = float(past_7["diff_medals"].max())
+                features["min_diff_7d"] = float(past_7["diff_medals"].min())
+            else:
+                features["avg_games_7d"] = 0.0
+                features["avg_diff_7d"] = 0.0
+                features["win_rate_7d"] = 0.0
+                features["max_diff_7d"] = 0.0
+                features["min_diff_7d"] = 0.0
+
+            features["day_of_week"] = int(row["dayofweek"])
+            features["is_weekend"] = 1 if int(row["dayofweek"]) >= 5 else 0
+
+            features["setting"] = int(self._estimate_setting(features["combined_prob"], features["diff_medals"], machine_name))
+            features["date"] = row["date"]
+            features["unit_key"] = f"{machine_name}-{unit_number}"
+            features["machine_name"] = machine_name
+            # keep original behavior: int if possible
+            un = str(unit_number).strip()
+            features["unit_number"] = int(un) if un.isdigit() else unit_number
+
+            features_list.append(features)
+
+        return pd.DataFrame(features_list)
+
+    # ------------------------------
+    # training
+    # ------------------------------
+    def train_models(self):
+        print("[train] start")
+        self.juggler_units = self._extract_juggler_units()
+
+        machines = {}
+        for u in self.juggler_units:
+            machines.setdefault(u["machine_name"], []).append(u)
+
+        global_rows = []
+
+        for machine_name, units in machines.items():
+            all_features = []
+            for u in units:
+                feat = self._create_features(machine_name, u["unit_number"])
+                if feat is None or len(feat) < int(self.cfg.min_feature_rows_for_training_per_unit):
+                    continue
+                all_features.append(feat)
+
+            if not all_features:
+                continue
+
+            combined_df = pd.concat(all_features, ignore_index=True)
+            combined_df = combined_df.sort_values(["unit_key", "date"]).reset_index(drop=True)
+
+            combined_df["y_setting_next"] = combined_df.groupby("unit_key")["setting"].shift(-1)
+            combined_df["y_diff_next"] = combined_df.groupby("unit_key")["diff_medals"].shift(-1)
+            combined_df["y_change_dir"] = np.sign(combined_df["y_setting_next"] - combined_df["setting"])
+            combined_df["y_win_next"] = (combined_df["y_diff_next"] > 0).astype(int)
+
+            train_df = combined_df.dropna(subset=["y_setting_next", "y_diff_next"]).copy()
+            train_df["y_setting_next"] = train_df["y_setting_next"].astype(int)
+            train_df["y_change_dir"] = train_df["y_change_dir"].astype(int)
+            train_df["y_win_next"] = train_df["y_win_next"].astype(int)
+
+            if len(train_df) < int(self.cfg.min_train_rows_per_machine):
+                continue
+
+            drop_cols = {
+                "setting", "diff_medals", "date", "unit_key", "machine_name", "unit_number",
+                "y_setting_next", "y_diff_next", "y_change_dir", "y_win_next"
+            }
+            feature_cols = [c for c in train_df.columns if c not in drop_cols]
+            if "prev_1d_setting" in feature_cols:
+                feature_cols.remove("prev_1d_setting")
+
+            X = train_df[feature_cols]
+            date_dt = pd.to_datetime(train_df["date"], errors="coerce")
+            max_date = date_dt.max()
+            cutoff_date = max_date - pd.Timedelta(days=14)
+
+            train_mask = date_dt < cutoff_date
+            test_mask = ~train_mask
+
+            if int(test_mask.sum()) < 30:
+                order = np.argsort(date_dt.values)
+                n_test = max(30, int(len(train_df) * 0.2))
+                test_idx = order[-n_test:]
+                test_mask = np.zeros(len(train_df), dtype=bool)
+                test_mask[test_idx] = True
+                train_mask = ~test_mask
+
+            X_tr_raw = X.loc[train_mask].values
+
+            ys_tr = train_df.loc[train_mask, "y_setting_next"].values
+
+            # v4 policy: clip y for diff regression
+            y_diff_next = train_df["y_diff_next"]
+            yd_tr_raw = y_diff_next.loc[train_mask].values
+            yd_tr = np.clip(yd_tr_raw.astype(float), -CLIP_DIFF, CLIP_DIFF)
+
+            yc_tr = train_df.loc[train_mask, "y_change_dir"].values
+
+            scaler = StandardScaler()
+            X_tr = scaler.fit_transform(X_tr_raw)
+
+            setting_model = RandomForestClassifier(
+                n_estimators=300, max_depth=12, random_state=42, class_weight="balanced_subsample"
+            )
+            diff_model = RandomForestRegressor(
+                n_estimators=300, max_depth=12, random_state=42
+            )
+            change_model = RandomForestClassifier(
+                n_estimators=300, max_depth=10, random_state=42, class_weight="balanced_subsample"
+            )
+
+            games_arr = train_df.loc[train_mask, "games"].values.astype(float)
+            abs_diff_arr = train_df.loc[train_mask, "abs_diff"].values.astype(float)
+            w = np.ones_like(games_arr, dtype=float)
+            w *= np.where(games_arr < 1500, 0.4, np.where(games_arr < 2500, 0.7, 1.0))
+            w *= np.where(abs_diff_arr < 200, 0.6, 1.0)
+            w *= np.where(abs_diff_arr > 1500, 1.25, 1.0)
+            w = np.clip(w, 0.1, 2.0)
+
+            setting_model.fit(X_tr, ys_tr, sample_weight=w)
+            diff_model.fit(X_tr, yd_tr, sample_weight=w)
+            change_model.fit(X_tr, yc_tr, sample_weight=w)
+
+            self.models[machine_name] = {
+                "setting_model": setting_model,
+                "diff_model": diff_model,
+                "change_model": change_model,
+                "feature_cols": feature_cols,
+            }
+            self.scalers[machine_name] = scaler
+
+            tmp = train_df.copy()
+            tmp["_train_mask"] = train_mask.astype(int)
+            tmp["_test_mask"] = test_mask.astype(int)
+            global_rows.append((tmp, feature_cols))
+
+        self._train_global_pwin(global_rows)
+        print("[train] done")
+
+    def _train_global_pwin(self, global_rows):
+        print("[train] global_pwin start")
+
+        if not global_rows:
+            self.global_win = {"model": None, "kind": None, "feature_cols": None}
+            self.global_win_cal = {"sigmoid": None, "isotonic": None, "meta": {"reason": "no_rows"}}
+            print("[train] global_pwin skipped: no rows")
+            return
+
+        union_cols = sorted(set().union(*[set(cols) for (_df, cols) in global_rows]))
+
+        parts = []
+        for df, cols in global_rows:
+            Xpart = df.reindex(columns=union_cols, fill_value=0.0).copy()
+            Xpart["y_win_next"] = df["y_win_next"].values
+            Xpart["_train_mask"] = df["_train_mask"].values
+            Xpart["_test_mask"] = df["_test_mask"].values
+            parts.append(Xpart)
+
+        gdf = pd.concat(parts, ignore_index=True)
+        y = gdf["y_win_next"].astype(int).values
+        train_mask = (gdf["_train_mask"].values.astype(int) == 1)
+        test_mask = (gdf["_test_mask"].values.astype(int) == 1)
+
+        X = gdf[union_cols].values
+        X_tr = X[train_mask]
+        y_tr = y[train_mask]
+        X_te = X[test_mask]
+        y_te = y[test_mask]
+
+        w = np.ones_like(y_tr, dtype=float)
+
+        if LGBMClassifier is None:
+            base = RandomForestClassifier(
+                n_estimators=700, max_depth=10, random_state=42, class_weight="balanced_subsample"
+            )
+            base.fit(X_tr, y_tr, sample_weight=w)
+            kind = "rf"
+        else:
+            pos_rate = float(np.mean(y_tr)) if len(y_tr) else 0.0
+            scale_pos_weight = float((1.0 - pos_rate) / pos_rate) if pos_rate > 0 else 1.0
+            base = LGBMClassifier(
+                n_estimators=1200,
+                learning_rate=0.03,
+                num_leaves=31,
+                subsample=0.85,
+                colsample_bytree=0.85,
+                reg_alpha=0.0,
+                reg_lambda=1.0,
+                random_state=42,
+                n_jobs=-1,
+                scale_pos_weight=scale_pos_weight,
+            )
+            base.fit(X_tr, y_tr, sample_weight=w)
+            kind = "lgbm"
+
+        self.global_win = {"model": base, "kind": kind, "feature_cols": union_cols}
+        
+        # --- calibration meta (debuggable) ---
+        # Note 
+        # - ここに「なぜ sigmoid/isotonic が None になったか」を必ず残す
+        # - 既存の出力互換性を崩さない（meta を厚くするだけ）
+        n_train = int(len(y_tr))
+        n_test = int(len(y_te))
+        pos_rate_train = float(np.mean(y_tr)) if n_train > 0 else 0.0
+        pos_rate_test = float(np.mean(y_te)) if n_test > 0 else 0.0
+
+        meta = {
+            "calib_samples": int(len(y_te)),
+            "isotonic_enabled": False,
+            "n_train": n_train,
+            "n_test": n_test,
+            "pos_rate_train": pos_rate_train,
+            "pos_rate_test": pos_rate_test,
+            "sigmoid_attempted": True,
+            "sigmoid_ok": False,
+            "sigmoid_error": None,
+            "isotonic_attempted": False,
+            "isotonic_ok": False,
+            "isotonic_error": None,
+            # predict_today 側で最終採用（sigmoid/isotonic/raw）をここに上書きする
+            "calibration_method_selected": None,
+        }
+
+        cal_sig = None
+        cal_iso = None
+
+        try:
+             # sklearn新仕様: prefit の代わりに FrozenEstimator(base) を使う
+            if FrozenEstimator is not None:
+                cal_sig = CalibratedClassifierCV(FrozenEstimator(base), method="sigmoid")
+                cal_sig.fit(X_te, y_te)
+            else:
+                # 古い sklearn 向けフォールバック（cv="prefit" が通る環境だけ）
+                cal_sig = CalibratedClassifierCV(base, method="sigmoid", cv="prefit")
+                cal_sig.fit(X_te, y_te)
+        except Exception as e:
+            cal_sig = None
+            meta["sigmoid_ok"] = False
+            meta["sigmoid_error"] = f"{type(e).__name__}: {e}"
+
+        if len(y_te) >= int(self.cfg.isotonic_min_samples):
+            meta["isotonic_attempted"] = True
+            try:
+                if FrozenEstimator is not None:
+                    cal_iso = CalibratedClassifierCV(FrozenEstimator(base), method="isotonic")
+                    cal_iso.fit(X_te, y_te)
+                else:
+                    cal_iso = CalibratedClassifierCV(base, method="isotonic", cv="prefit")
+                    cal_iso.fit(X_te, y_te)
+                meta["isotonic_enabled"] = True
+                meta["isotonic_ok"] = True
+            except Exception as e:
+                cal_iso = None
+                meta["isotonic_ok"] = False
+                meta["isotonic_error"] = f"{type(e).__name__}: {e}"
+            else:
+                meta["isotonic_attempted"] = False
+                meta["isotonic_ok"] = False
+                meta["isotonic_error"] = f"insufficient_holdout: n_test={n_test} < isotonic_min_samples={int(self.cfg.isotonic_min_samples)}"
+
+        self.global_win_cal = {"sigmoid": cal_sig, "isotonic": cal_iso, "meta": meta}
+        print(f"[train] global_pwin done. kind={kind} holdout={int(len(y_te))}")
+
+    def train_lgbm_4plus(self):
+        # optional 4+ model (kept for scoring parity with v4)
+        if LGBMClassifier is None:
+            self.lgbm_models = {}
+            self.lgbm_meta = {"enabled": False, "reason": "lightgbm_not_installed"}
+            print("[train] 4plus skipped")
+            return
+
+        self.lgbm_models = {}
+        self.lgbm_meta = {"enabled": True, "trained_machines": []}
+
+        machines = {}
+        for u in self.juggler_units:
+            machines.setdefault(u["machine_name"], []).append(u)
+
+        for machine_name, units in machines.items():
+            all_features = []
+            for u in units:
+                feat = self._create_features(machine_name, u["unit_number"])
+                if feat is None or len(feat) < int(self.cfg.min_feature_rows_for_training_per_unit):
+                    continue
+                all_features.append(feat)
+
+            if not all_features:
+                continue
+
+            combined_df = pd.concat(all_features, ignore_index=True)
+            combined_df = combined_df.sort_values(["unit_key", "date"]).reset_index(drop=True)
+            combined_df["y_setting_next"] = combined_df.groupby("unit_key")["setting"].shift(-1)
+            train_df = combined_df.dropna(subset=["y_setting_next"]).copy()
+            train_df["y_setting_next"] = train_df["y_setting_next"].astype(int)
+            train_df["y_is_4plus_next"] = (train_df["y_setting_next"] >= 4).astype(int)
+
+            if len(train_df) < 200:
+                continue
+
+            drop_cols = {
+                "setting", "diff_medals", "date", "unit_key", "machine_name", "unit_number",
+                "y_setting_next", "y_is_4plus_next"
+            }
+            feature_cols = [c for c in train_df.columns if c not in drop_cols]
+            if "prev_1d_setting" in feature_cols:
+                feature_cols.remove("prev_1d_setting")
+
+            X = train_df[feature_cols]
+            y = train_df["y_is_4plus_next"]
+
+            date_dt = pd.to_datetime(train_df["date"], errors="coerce")
+            max_date = date_dt.max()
+            cutoff_date = max_date - pd.Timedelta(days=14)
+            train_mask = date_dt < cutoff_date
+            test_mask = ~train_mask
+
+            if int(test_mask.sum()) < 30:
+                order = np.argsort(date_dt.values)
+                n_test = max(30, int(len(train_df) * 0.2))
+                test_idx = order[-n_test:]
+                test_mask = np.zeros(len(train_df), dtype=bool)
+                test_mask[test_idx] = True
+                train_mask = ~test_mask
+
+            X_tr = X.loc[train_mask]
+            y_tr = y.loc[train_mask]
+
+            games_arr = train_df.loc[train_mask, "games"].values.astype(float)
+            abs_diff_arr = train_df.loc[train_mask, "abs_diff"].values.astype(float)
+            w = np.ones_like(games_arr, dtype=float)
+            w *= np.where(games_arr < 1500, 0.4, np.where(games_arr < 2500, 0.7, 1.0))
+            w *= np.where(abs_diff_arr < 200, 0.6, 1.0)
+            w *= np.where(abs_diff_arr > 1500, 1.25, 1.0)
+            w = np.clip(w, 0.1, 2.0)
+
+            pos_rate = float(y_tr.mean()) if len(y_tr) else 0.0
+            scale_pos_weight = float((1.0 - pos_rate) / pos_rate) if pos_rate > 0 else 1.0
+
+            # データ数に応じてn_estimatorsを調整
+            n_samples = len(X_tr)
+            n_estimators = min(600, max(50, n_samples // 3))
+
+            model = LGBMClassifier(
+                n_estimators=n_estimators,
+                learning_rate=0.03,
+                num_leaves=31,
+                min_child_samples=max(20, n_samples // 50),
+                subsample=0.8,
+                colsample_bytree=0.8,
+                reg_alpha=0.0,
+                reg_lambda=1.0,
+                random_state=42,
+                n_jobs=-1,
+                scale_pos_weight=scale_pos_weight,
+                verbose=-1,
+            )
+            model.fit(X_tr, y_tr, sample_weight=w)
+
+            self.lgbm_models[machine_name] = {"model": model, "feature_cols": feature_cols, "threshold": 0.5}
+            self.lgbm_meta["trained_machines"].append(machine_name)
+
+
+    # ------------------------------
+    # predict
+    # ------------------------------
+    def predict_today(self):
+        self.predictions = {}
+        self.juggler_units = self._extract_juggler_units()
+
+        for u in self.juggler_units:
+            machine_name = u["machine_name"]
+            unit_number = u["unit_number"]
+            key = f"{machine_name}-{unit_number}"
+
+            if machine_name not in self.models:
+                continue
+
+            feat_df = self._create_features(machine_name, unit_number)
+            if feat_df is None or len(feat_df) == 0:
+                continue
+
+            latest = feat_df.sort_values("date").iloc[-1]
+            model_pack = self.models[machine_name]
+            feature_cols = model_pack["feature_cols"]
+
+            X0 = latest.reindex(feature_cols).to_frame().T.fillna(0)
+
+            scaler = self.scalers.get(machine_name)
+            Xs = pd.DataFrame(scaler.transform(X0), columns=feature_cols) if scaler is not None else X0
+
+            setting_model = model_pack["setting_model"]
+            diff_model = model_pack["diff_model"]
+            change_model = model_pack["change_model"]
+
+            pred_setting = int(setting_model.predict(Xs)[0])
+
+            # v4 policy: clip prediction for diff
+            raw_pred_diff = float(diff_model.predict(Xs)[0])
+            pred_diff = float(np.clip(raw_pred_diff, -CLIP_DIFF, CLIP_DIFF))
+
+            try:
+                proba = setting_model.predict_proba(Xs)[0]
+                classes = list(setting_model.classes_)
+                setting_prob_map = {int(c): float(p) for c, p in zip(classes, proba)}
+            except Exception:
+                setting_prob_map = {pred_setting: 1.0}
+
+            confidence = float(max(setting_prob_map.values())) if setting_prob_map else 0.0
+
+            change_prob_map = {"down": 0.0, "same": 0.0, "up": 0.0}
+            try:
+                cproba = change_model.predict_proba(Xs)[0]
+                cclasses = list(change_model.classes_)
+                tmp = {int(c): float(p) for c, p in zip(cclasses, cproba)}
+                change_prob_map = {
+                    "down": float(tmp.get(-1, 0.0)),
+                    "same": float(tmp.get(0, 0.0)),
+                    "up": float(tmp.get(1, 0.0)),
+                }
+            except Exception:
+                pass
+
+            # optional 4plus
+            prob_4plus = None
+            try:
+                lgbm_pack = self.lgbm_models.get(machine_name)
+                if lgbm_pack and "model" in lgbm_pack:
+                    fcols4 = lgbm_pack.get("feature_cols", [])
+                    X4 = latest.reindex(fcols4).to_frame().T.fillna(0)
+                    prob_4plus = float(lgbm_pack["model"].predict_proba(X4)[:, 1][0])
+            except Exception:
+                prob_4plus = None
+
+            # global p_win (raw + calibrated)
+            p_win_raw = None
+            p_win_sigmoid = None
+            p_win_isotonic = None
+            p_win = 0.0
+
+            gw = self.global_win or {}
+            gwm = gw.get("model")
+            gcols = gw.get("feature_cols") or []
+            if gwm is not None and gcols:
+                Xg = latest.reindex(gcols).to_frame().T.fillna(0).values
+                try:
+                    pro = gwm.predict_proba(Xg)[0]
+                    classes = list(getattr(gwm, "classes_", [0, 1]))
+                    m = {int(c): float(p) for c, p in zip(classes, pro)}
+                    p_win_raw = float(m.get(1, 0.0))
+                except Exception:
+                    p_win_raw = None
+
+                cal = self.global_win_cal or {}
+                if cal.get("sigmoid") is not None:
+                    try:
+                        p_win_sigmoid = float(cal["sigmoid"].predict_proba(Xg)[:, 1][0])
+                    except Exception:
+                        p_win_sigmoid = None
+                if cal.get("isotonic") is not None:
+                    try:
+                        p_win_isotonic = float(cal["isotonic"].predict_proba(Xg)[:, 1][0])
+                    except Exception:
+                        p_win_isotonic = None
+
+            # どれを採用したかを meta に残す（ブラックボックス化を防ぐ）
+            method_selected = None
+            p_win = p_win_sigmoid
+            if p_win is None:
+                method_selected = "isotonic"
+                p_win = p_win_isotonic
+            if p_win is None:
+                method_selected = "raw"
+                p_win = p_win_raw
+            if p_win is None:
+                method_selected = "none"
+                p_win = 0.0
+            if method_selected is None:
+                method_selected = "sigmoid"
+            p_win = float(clamp(p_win, 0.0, 1.0))
+            
+            try:
+                if isinstance(self.global_win_cal, dict) and isinstance(self.global_win_cal.get("meta"), dict):
+                    self.global_win_cal["meta"]["calibration_method_selected"] = method_selected
+            except Exception:
+                pass
+
+            un_str = str(unit_number).strip()
+            out_unit = int(un_str) if un_str.isdigit() else unit_number
+
+            self.predictions[key] = {
+                # ---- backtest必須キー ----
+                "machine_name": machine_name,
+                "unit_number": out_unit,
+                "predicted_diff": float(pred_diff),
+                "p_win": float(p_win),
+                # ---- extras ----
+                "predicted_setting": pred_setting,
+                "predicted_diff_raw": float(raw_pred_diff),
+                "confidence": float(confidence),
+                "setting_probabilities": setting_prob_map,
+                "change_probabilities": change_prob_map,
+                "prob_4plus": prob_4plus,
+                "p_win_raw": p_win_raw,
+                "p_win_sigmoid": p_win_sigmoid,
+                "p_win_isotonic": p_win_isotonic,
+                "clip_diff_limit": float(CLIP_DIFF),
+            }
+
+    # ------------------------------
+    # scoring (kingsetagaya v4 compatible by default)
+    # ------------------------------
+    def apply_score(self):
+        preds = self.predictions or {}
+        if not preds:
+            return
+
+        diffs = [safe_float(p.get("predicted_diff"), 0.0) or 0.0 for p in preds.values()]
+        q10 = float(np.quantile(diffs, 0.10)) if len(diffs) >= 10 else float(np.min(diffs))
+        q90 = float(np.quantile(diffs, 0.90)) if len(diffs) >= 10 else float(np.max(diffs))
+
+        def norm_diff(x):
+            if q90 <= q10:
+                return 0.5
+            return clamp((x - q10) / (q90 - q10), 0.0, 1.0)
+
+        w_pwin = float(self.cfg.score_w_pwin)
+        w_diff = float(self.cfg.score_w_diff)
+        w_p4 = float(self.cfg.score_w_p4)
+
+        for p in preds.values():
+            pwin = clamp(safe_float(p.get("p_win"), 0.0) or 0.0, 0.0, 1.0)
+            pdiff = safe_float(p.get("predicted_diff"), 0.0) or 0.0
+            p4 = safe_float(p.get("prob_4plus"), 0.0)
+            if p4 is None:
+                p4 = 0.0
+            p4 = clamp(p4, 0.0, 1.0)
+
+            diff01 = norm_diff(pdiff)
+            base100 = 100.0 * (w_pwin * pwin + w_diff * diff01 + w_p4 * p4)
+            p["final_score"] = float(round(clamp(base100, 0.0, 100.0), 2))
+
+    def add_final_score_100(self):
+        preds = self.predictions or {}
+        if not preds:
+            return
+
+        arr = [float(p.get("final_score", 0.0)) for p in preds.values()]
+        smin = float(np.min(arr))
+        smax = float(np.max(arr))
+        spread = smax - smin
+        if spread < 1e-9:
+            for p in preds.values():
+                p["final_score_100"] = 50.0
+            return
+        for p in preds.values():
+            s = float(p.get("final_score", 0.0))
+            p["final_score_100"] = round(float(clamp(100.0 * (s - smin) / spread, 0.0, 100.0)), 1)
+
+    # ------------------------------
+    # output
+    # ------------------------------
+    def save_results(self, output_dir: str):
+        os.makedirs(output_dir, exist_ok=True)
+        out_json = os.path.join(output_dir, "juggler_predictions_enhanced.json")
+
+        store_name = (self.data.get("shop") or {}).get("shop_name", "") if isinstance(self.data.get("shop"), dict) else ""
+        
+        # ------------------------------------------------------------
+        # Meta stabilization: make global_calibration consistent with
+        # actual emitted prediction fields (p_win_raw/sigmoid/isotonic).
+        #
+        # Rationale:
+        # - Training-time calibration meta can be misleading due to sklearn
+        #   version differences / fallback paths.
+        # - Users validate calibration via Top5 logs and per-prediction
+        #   fields. This block guarantees meta matches reality.
+        # ------------------------------------------------------------
+        try:
+            meta_cal = {}
+            if isinstance(self.global_win_cal, dict) and isinstance(self.global_win_cal.get("meta"), dict):
+                # copy to avoid mutating unexpected refs
+                meta_cal = dict(self.global_win_cal.get("meta", {}) or {})
+
+            preds = self.predictions or {}
+
+            # detect existence of calibrated outputs in emitted predictions
+            any_sigmoid_value = False
+            any_isotonic_value = False
+            any_raw_value = False
+            any_method_selected = None
+
+            for _k, v in preds.items():
+                if not isinstance(v, dict):
+                    continue
+                ps = v.get("p_win_sigmoid", None)
+                pi = v.get("p_win_isotonic", None)
+                pr = v.get("p_win_raw", None)
+                p = v.get("p_win", None)
+
+                # "value exists" check: allow 0.0 as valid, reject None
+                if ps is not None:
+                    any_sigmoid_value = True
+                if pi is not None:
+                    any_isotonic_value = True
+                if pr is not None:
+                    any_raw_value = True
+
+                # infer which method was used for p_win (first non-null match)
+                if any_method_selected is None:
+                    if (ps is not None) and (p is not None) and (abs(float(ps) - float(p)) < 1e-12):
+                        any_method_selected = "sigmoid"
+                    elif (pi is not None) and (p is not None) and (abs(float(pi) - float(p)) < 1e-12):
+                        any_method_selected = "isotonic"
+                    elif (pr is not None) and (p is not None) and (abs(float(pr) - float(p)) < 1e-12):
+                        any_method_selected = "raw"
+
+            # overwrite with fact-based status
+            meta_cal["sigmoid_attempted"] = bool(any_sigmoid_value)
+            meta_cal["sigmoid_ok"] = bool(any_sigmoid_value)
+            meta_cal["sigmoid_error"] = None if any_sigmoid_value else (meta_cal.get("sigmoid_error") or "sigmoid_not_emitted")
+
+            meta_cal["isotonic_attempted"] = bool(any_isotonic_value)
+            meta_cal["isotonic_ok"] = bool(any_isotonic_value)
+            meta_cal["isotonic_enabled"] = bool(any_isotonic_value)
+            meta_cal["isotonic_error"] = None if any_isotonic_value else (meta_cal.get("isotonic_error") or "isotonic_not_emitted")
+
+            # also keep raw availability (optional but useful)
+            meta_cal["raw_available"] = bool(any_raw_value)
+
+            # final method used
+            if any_method_selected is None:
+                # fall back to existing meta or mark unknown
+                any_method_selected = meta_cal.get("calibration_method_selected") or "unknown"
+            meta_cal["calibration_method_selected"] = any_method_selected
+
+            # put back into self.global_win_cal.meta (so payload uses it)
+            if isinstance(self.global_win_cal, dict):
+                if "meta" not in self.global_win_cal or not isinstance(self.global_win_cal.get("meta"), dict):
+                    self.global_win_cal["meta"] = {}
+                self.global_win_cal["meta"].update(meta_cal)
+        except Exception:
+            # do not break saving
+            pass
+        payload = {
+            "store_name": store_name,
+            "analysis_date": datetime.now().strftime("%Y-%m-%d"),
+            "predictions": self.predictions,  # dict contract (agreed)
+            "meta": {
+                "script": "JugAnalyzer_universal",
+                "generated_at": datetime.now().isoformat(),
+                "global_calibration": (self.global_win_cal or {}).get("meta", {}),
+                "clip_diff_limit": float(CLIP_DIFF),
+                "shop": self.cfg.shop,
+            }
+        }
+        save_json(payload, out_json)
+        print(f"[save] {out_json}")
+
+
+# ------------------------------
+# CLI
+# ------------------------------
+def _auto_shop_name(data: dict) -> str:
+    try:
+        s = (data.get("shop") or {}).get("shop_name") if isinstance(data.get("shop"), dict) else ""
+        s = normalize_machine_name(s)
+        return s
+    except Exception:
+        return ""
+
+
+def _load_shop_config(path: str, shop_arg: str, data: dict) -> UniversalShopConfig:
+    cfg = UniversalShopConfig()
+    cfg.shop = shop_arg or _auto_shop_name(data)
+
+    if not path:
+        return cfg
+
+    try:
+        j = load_json(path)
+    except Exception:
+        return cfg
+
+    # Accept minimal JSON overrides
+    if isinstance(j, dict):
+        if "shop" in j and isinstance(j["shop"], str):
+            cfg.shop = j["shop"]
+        if "juggler_keywords" in j and isinstance(j["juggler_keywords"], list) and j["juggler_keywords"]:
+            cfg.juggler_keywords = tuple([str(x) for x in j["juggler_keywords"]])
+        if "active_within_days" in j:
+            cfg.active_within_days = int(j["active_within_days"])
+        if "min_unit_days_for_features" in j:
+            cfg.min_unit_days_for_features = int(j["min_unit_days_for_features"])
+        if "min_train_rows_per_machine" in j:
+            cfg.min_train_rows_per_machine = int(j["min_train_rows_per_machine"])
+
+        # scoring weights
+        if "score_weights" in j and isinstance(j["score_weights"], dict):
+            sw = j["score_weights"]
+            if "p_win" in sw: cfg.score_w_pwin = float(sw["p_win"])
+            if "diff01" in sw: cfg.score_w_diff = float(sw["diff01"])
+            if "p4" in sw: cfg.score_w_p4 = float(sw["p4"])
+
+        if "isotonic_min_samples" in j:
+            cfg.isotonic_min_samples = int(j["isotonic_min_samples"])
+
+    return cfg
+
+
+def main():
+    if len(sys.argv) < 2:
+        print("usage: python JugAnalyzer_universal.py <ana_slo_all.json> [output_dir] "
+              "[--shop SHOP] [--config CONFIG_JSON] "
+              "[--model-dir DIR] [--retrain-mode always|never|auto] [--retrain-day Sunday]")
+        sys.exit(1)
+
+    data_file = sys.argv[1]
+    output_dir = sys.argv[2] if len(sys.argv) >= 3 and not sys.argv[2].startswith("--") else os.path.dirname(os.path.abspath(data_file))
+
+    shop = ""
+    config_path = ""
+    model_dir = None
+    retrain_mode = "auto"
+    retrain_day = "Sunday"
+
+    argv = sys.argv[3:] if len(sys.argv) >= 3 else sys.argv[2:]
+    i = 0
+    while i < len(argv):
+        a = argv[i]
+        if a == "--shop" and i + 1 < len(argv):
+            shop = argv[i + 1]
+            i += 2
+            continue
+        if a == "--config" and i + 1 < len(argv):
+            config_path = argv[i + 1]
+            i += 2
+            continue
+        if a == "--model-dir" and i + 1 < len(argv):
+            model_dir = argv[i + 1]
+            i += 2
+            continue
+        if a == "--retrain-mode" and i + 1 < len(argv):
+            retrain_mode = argv[i + 1]
+            i += 2
+            continue
+        if a == "--retrain-day" and i + 1 < len(argv):
+            retrain_day = argv[i + 1]
+            i += 2
+            continue
+        i += 1
+
+    data = load_json(data_file)
+    cfg = _load_shop_config(config_path, shop, data)
+
+    pred = JugAnalyzerUniversal(data_file, cfg)
+
+    # retrain policy (v4 compatible)
+    cache_exists = False
+    if model_dir is not None:
+        bundle_path = pred._model_bundle_path(output_dir, model_dir=model_dir)
+        cache_exists = os.path.exists(bundle_path)
+
+    def should_retrain(mode, day, cache_exists_flag):
+        m = (mode or "auto").lower()
+        if m == "always":
+            return True
+        if m == "never":
+            return False
+        if not cache_exists_flag:
+            return True
+        try:
+            today = datetime.now().strftime("%A")
+        except Exception:
+            today = ""
+        return today == (day or "Sunday")
+
+    do_retrain = should_retrain(retrain_mode, retrain_day, cache_exists)
+
+    if (model_dir is not None) and (not do_retrain):
+        ok = pred.load_model_bundle(output_dir, model_dir=model_dir)
+        if ok:
+            print("[cache] loaded")
+        else:
+            do_retrain = True
+
+    if do_retrain:
+        pred.train_models()
+        pred.train_lgbm_4plus()
+        if model_dir is not None:
+            pred.save_model_bundle(output_dir, model_dir=model_dir)
+            print("[cache] saved")
+
+    pred.predict_today()
+    pred.apply_score()
+    pred.add_final_score_100()
+    pred.save_results(output_dir)
+    print("done")
+
+
+if __name__ == "__main__":
+    main()

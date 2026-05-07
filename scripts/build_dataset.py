@@ -1,93 +1,107 @@
-"""R2 から dataset を全件読み込み、サマリと parquet を出力する確認用スクリプト。
-
-使い方:
-    uv run python scripts/build_dataset.py
-    uv run python scripts/build_dataset.py --shops kingsetagaya,messekichijoji
-    uv run python scripts/build_dataset.py --output data/dataset.parquet
-"""
+﻿"""dataset 構築 CLI: R2 → 履歴特徴量 → split → parquet + meta JSON 保存。"""
 from __future__ import annotations
 
 import argparse
+import json
 import logging
+import pathlib
 import sys
-from pathlib import Path
 
+import pandas as pd
 import yaml
 from dotenv import load_dotenv
 
-from juggler_predictor import CONFIG_DIR, DATA_DIR
-from juggler_predictor.common.logging import setup_logging
-from juggler_predictor.model import (
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+SRC = ROOT / "src"
+CONFIG_DIR = ROOT / "config"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
+
+from juggler_predictor.common.logging import setup_logging  # noqa: E402
+from juggler_predictor.model import (  # noqa: E402
     build_features,
     load_dataset_from_r2,
     time_split,
 )
-from juggler_predictor.storage import build_r2_client_from_env
+from juggler_predictor.model.dataset import add_prev_setting_features  # noqa: E402
+from juggler_predictor.storage import build_r2_client_from_env  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
 
 def main() -> int:
-    setup_logging()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--out", default=str(ROOT / "data" / "dataset.parquet"))
+    parser.add_argument("--valid-days", type=int, default=7)
+    args = parser.parse_args()
+
     load_dotenv()
+    setup_logging()
 
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--shops", default="", help="カンマ区切りの店舗 id (空なら全店)")
-    ap.add_argument("--output", default=str(DATA_DIR / "dataset.parquet"))
-    ap.add_argument("--valid-days", type=int, default=7)
-    args = ap.parse_args()
-
-    shop_ids = [s.strip() for s in args.shops.split(",") if s.strip()] or None
+    machines_cfg = yaml.safe_load((CONFIG_DIR / "machines.yaml").read_text(encoding="utf-8"))
 
     logger.info("[1] R2 から dataset 読み込み")
     r2 = build_r2_client_from_env()
-    df = load_dataset_from_r2(r2, shop_ids=shop_ids)
-    logger.info("rows=%d shops=%d dates=%d",
-                len(df),
-                df["shop_id"].nunique() if not df.empty else 0,
-                df["date"].nunique() if not df.empty else 0)
-    if df.empty:
-        logger.error("dataset が空です。bootstrap を先に実行してください。")
-        return 1
+    df = load_dataset_from_r2(r2)
+    df = add_prev_setting_features(df)
+    logger.info("prev_setting/prev_p_high/y_setting_next added rows=%d", len(df))
+    logger.info("rows=%d shops=%d dates=%d", len(df), df["shop_id"].nunique(), df["date"].nunique())
 
-    logger.info("[2] 特徴量生成")
-    machines_cfg = yaml.safe_load((CONFIG_DIR / "machines.yaml").read_text(encoding="utf-8"))
+    logger.info("[2] 特徴量生成 (履歴特徴量含む)")
     feat_df, meta = build_features(df, machines_config=machines_cfg)
     logger.info("feature_cols=%d", len(meta.feature_cols))
-    logger.info("juggler 行 (machine_dummy のいずれかが 1): %d / 全 %d",
-                int(feat_df[meta.machine_dummy_cols].sum(axis=1).gt(0).sum()),
-                len(feat_df))
 
     logger.info("[3] 時系列 split")
-    train, valid = time_split(feat_df, valid_days=args.valid_days)
+    train_df, valid_df = time_split(feat_df, valid_days=args.valid_days)
+    train_df = train_df.assign(split="train")
+    valid_df = valid_df.assign(split="valid")
+    full = pd.concat([train_df, valid_df], ignore_index=True)
 
+    _print_summary(full, train_df, valid_df, meta)
+
+    out_path = pathlib.Path(args.out)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    full.to_parquet(out_path, index=False)
+    size_mb = out_path.stat().st_size / 1024 / 1024
+    logger.info("[OK] parquet 保存: %s (%.1f MB)", out_path, size_mb)
+
+    # === 重要: feature_cols とメタ情報を JSON サイドカーで保存 ===
+    meta_path = out_path.with_suffix(".meta.json")
+    meta_payload = {
+        "feature_cols": meta.feature_cols,
+        "target_diff_col": meta.target_diff_col,
+        "target_win_col": meta.target_win_col,
+        "machine_dummy_cols": meta.machine_dummy_cols,
+        "shop_dummy_cols": meta.shop_dummy_cols,
+        "history_cols": meta.history_cols,
+        "shop_ids": meta.shop_ids,
+        "n_features": len(meta.feature_cols),
+    }
+    meta_path.write_text(json.dumps(meta_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    logger.info("[OK] meta 保存: %s (feature_cols=%d)", meta_path, len(meta.feature_cols))
+    return 0
+
+
+def _print_summary(full, train_df, valid_df, meta) -> None:
     print()
     print("=" * 60)
     print("[DATASET SUMMARY]")
     print("=" * 60)
-    print(f"  全行数        : {len(feat_df)}")
-    print(f"  店舗数        : {feat_df['shop_id'].nunique()}")
-    print(f"  日付範囲      : {feat_df['date'].min()} 〜 {feat_df['date'].max()}")
+    print(f"  全行数        : {len(full)}")
+    print(f"  店舗数        : {full['shop_id'].nunique()}")
+    print(f"  日付範囲      : {full['date'].min()} 〜 {full['date'].max()}")
     print(f"  特徴量列数    : {len(meta.feature_cols)}")
-    print(f"  train rows    : {len(train)}")
-    print(f"  valid rows    : {len(valid)}")
-    if not train.empty:
-        print(f"  train target_win 率: {train['target_win'].mean():.3f}")
-    if not valid.empty:
-        print(f"  valid target_win 率: {valid['target_win'].mean():.3f}")
+    print(f"    内訳        : 当日派生7 + 機種dummy{len(meta.machine_dummy_cols)} + 店舗dummy{len(meta.shop_dummy_cols)} + 履歴{len(meta.history_cols)}")
+    print(f"  train rows    : {len(train_df)}")
+    print(f"  valid rows    : {len(valid_df)}")
+    print(f"  train target_win 率: {train_df['target_win'].mean():.3f}")
+    print(f"  valid target_win 率: {valid_df['target_win'].mean():.3f}")
     print()
     print("=== 機種別 行数 (上位 10) ===")
-    counts = feat_df["machine_name"].value_counts().head(10)
+    counts = full["machine_name"].value_counts().head(10)
     for name, n in counts.items():
-        print(f"  {name:30s}  {n}")
+        print(f"  {name:30s} {n}")
     print()
-
-    out_path = Path(args.output)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    feat_df.to_parquet(out_path, index=False)
-    logger.info("[OK] parquet 保存: %s (%d MB)",
-                out_path, out_path.stat().st_size // (1024 * 1024))
-    return 0
 
 
 if __name__ == "__main__":

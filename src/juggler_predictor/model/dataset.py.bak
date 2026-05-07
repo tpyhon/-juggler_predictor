@@ -115,33 +115,3 @@ def load_dataset_from_local(root: Path) -> pd.DataFrame:
                 continue
             rows.extend(_row_dict(shop_id, date_str, page))
     return pd.DataFrame(rows)
-
-
-from .setting_estimator import estimate_setting
-
-
-def add_prev_setting_features(df):
-    """prev_setting / prev_p_high / y_setting_next を生成。"""
-    import pandas as pd
-
-    if "setting" not in df.columns:
-        def _est(row):
-            return estimate_setting(
-                composite_prob=row.get("composite_prob"),
-                diff=row.get("diff", 0.0),
-                machine_name=row.get("machine_name", ""),
-            )
-
-        df = df.copy()
-        df["setting"] = df.apply(_est, axis=1).astype(int)
-
-    df = df.sort_values(["shop_id", "unit_number", "date"]).copy()
-    grp = df.groupby(["shop_id", "unit_number"], sort=False)
-    df["prev_setting"] = grp["setting"].shift(1)
-    df["prev_p_high"] = (df["prev_setting"] >= 4).astype("float")
-    df["prev_setting"] = df["prev_setting"].fillna(3.0)
-    df["prev_p_high"] = df["prev_p_high"].fillna(0.0)
-
-    if "y_setting_next" not in df.columns:
-        df["y_setting_next"] = grp["setting"].shift(-1)
-    return df

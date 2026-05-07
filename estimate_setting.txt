@@ -1,0 +1,125 @@
+﻿
+> specs_dump.txt:365:    def _estimate_setting(self, combined_prob, diff_medals, machine_name):
+  specs_dump.txt:366:        spec_name = self._find_spec_name(machine_name)
+  specs_dump.txt:367:        if spec_name and spec_name in JUGGLER_SPECS and combined_prob > 0:
+  specs_dump.txt:368:            distances = [(i + 1, abs(combined_prob - sp)) for i, sp in enumer
+ate(JUGGLER_SPECS[spec_name]["合成"])]
+  specs_dump.txt:369:            return min(distances, key=lambda x: x[1])[0]
+  specs_dump.txt:370:        else:
+  specs_dump.txt:371:            # fallback heuristic (v4 compatible)
+  specs_dump.txt:372:            if diff_medals > 1500:
+  specs_dump.txt:373:                return 6
+  specs_dump.txt:374:            elif diff_medals > 500:
+  specs_dump.txt:375:                return 5
+  specs_dump.txt:376:            elif diff_medals > 0:
+  specs_dump.txt:377:                return 4
+  specs_dump.txt:378:            elif diff_medals > -500:
+  specs_dump.txt:379:                return 3
+  specs_dump.txt:380:            elif diff_medals > -1000:
+  specs_dump.txt:381:                return 2
+  specs_dump.txt:382:            else:
+  specs_dump.txt:383:                return 1
+  specs_dump.txt:384:
+  specs_dump.txt:385:    # ------------------------------
+  specs_dump.txt:386:    # features
+  specs_dump.txt:387:    # ------------------------------
+  specs_dump.txt:388:    def _create_features(self, machine_name, unit_number):
+  specs_dump.txt:389:        unit_df = self.df[
+  specs_dump.txt:390:            (self.df["display_name"] == machine_name) &
+  specs_dump.txt:391:            (self.df["unit_number"] == unit_number)
+  specs_dump.txt:392:        ].copy()
+  specs_dump.txt:393:
+  specs_dump.txt:394:        unit_df = unit_df[unit_df["games"] > 0].sort_values("date").reset_ind
+ex(drop=True)
+  specs_dump.txt:395:        if len(unit_df) < int(self.cfg.min_unit_days_for_features):
+  specs_dump.txt:396:            return None
+  specs_dump.txt:397:
+  specs_dump.txt:398:        features_list = []
+  specs_dump.txt:399:        for idx in range(len(unit_df)):
+  specs_dump.txt:400:            row = unit_df.iloc[idx]
+  specs_dump.txt:401:            features = {}
+  specs_dump.txt:402:
+  specs_dump.txt:403:            features["games"] = float(row["games"])
+  specs_dump.txt:404:            features["diff_medals"] = float(row["diff_medals"])
+  specs_dump.txt:405:            features["abs_diff"] = abs(float(row["diff_medals"]))
+> specs_dump.txt:427:                features["prev_1d_setting"] = int(self._estimate_setting(prev
+_comb, float(prev_row["diff_medals"]), machine_name))
+  specs_dump.txt:428:                features["prev_1d_is_high_diff"] = 1 if float(prev_row["diff_
+medals"]) > 1000 else 0
+  specs_dump.txt:429:                features["prev_1d_is_low_diff"] = 1 if float(prev_row["diff_m
+edals"]) < -500 else 0
+  specs_dump.txt:430:            else:
+  specs_dump.txt:431:                features["prev_1d_diff"] = 0.0
+  specs_dump.txt:432:                features["prev_1d_games"] = 0.0
+  specs_dump.txt:433:                features["prev_1d_combined_prob"] = 1/500
+  specs_dump.txt:434:                features["prev_1d_setting"] = 3
+  specs_dump.txt:435:                features["prev_1d_is_high_diff"] = 0
+  specs_dump.txt:436:                features["prev_1d_is_low_diff"] = 0
+  specs_dump.txt:437:
+  specs_dump.txt:438:            past_7 = unit_df.iloc[max(0, idx - 7):idx]
+  specs_dump.txt:439:            if len(past_7) > 0:
+  specs_dump.txt:440:                features["avg_games_7d"] = float(past_7["games"].mean())
+  specs_dump.txt:441:                features["avg_diff_7d"] = float(past_7["diff_medals"].mean())
+  specs_dump.txt:442:                features["win_rate_7d"] = float((past_7["diff_medals"] > 0).m
+ean())
+  specs_dump.txt:443:                features["max_diff_7d"] = float(past_7["diff_medals"].max())
+  specs_dump.txt:444:                features["min_diff_7d"] = float(past_7["diff_medals"].min())
+  specs_dump.txt:445:            else:
+  specs_dump.txt:446:                features["avg_games_7d"] = 0.0
+  specs_dump.txt:447:                features["avg_diff_7d"] = 0.0
+  specs_dump.txt:448:                features["win_rate_7d"] = 0.0
+  specs_dump.txt:449:                features["max_diff_7d"] = 0.0
+  specs_dump.txt:450:                features["min_diff_7d"] = 0.0
+  specs_dump.txt:451:
+  specs_dump.txt:452:            features["day_of_week"] = int(row["dayofweek"])
+  specs_dump.txt:453:            features["is_weekend"] = 1 if int(row["dayofweek"]) >= 5 else 0
+  specs_dump.txt:454:
+> specs_dump.txt:455:            features["setting"] = int(self._estimate_setting(features["combin
+ed_prob"], features["diff_medals"], machine_name))
+  specs_dump.txt:456:            features["date"] = row["date"]
+  specs_dump.txt:457:            features["unit_key"] = f"{machine_name}-{unit_number}"
+  specs_dump.txt:458:            features["machine_name"] = machine_name
+  specs_dump.txt:459:            # keep original behavior: int if possible
+  specs_dump.txt:460:            un = str(unit_number).strip()
+  specs_dump.txt:461:            features["unit_number"] = int(un) if un.isdigit() else unit_numbe
+r
+  specs_dump.txt:462:
+  specs_dump.txt:463:            features_list.append(features)
+  specs_dump.txt:464:
+  specs_dump.txt:465:        return pd.DataFrame(features_list)
+  specs_dump.txt:466:
+  specs_dump.txt:467:    # ------------------------------
+  specs_dump.txt:468:    # training
+  specs_dump.txt:469:    # ------------------------------
+  specs_dump.txt:470:    def train_models(self):
+  specs_dump.txt:471:        print("[train] start")
+  specs_dump.txt:472:        self.juggler_units = self._extract_juggler_units()
+  specs_dump.txt:473:
+  specs_dump.txt:474:        machines = {}
+  specs_dump.txt:475:        for u in self.juggler_units:
+  specs_dump.txt:476:            machines.setdefault(u["machine_name"], []).append(u)
+  specs_dump.txt:477:
+  specs_dump.txt:478:        global_rows = []
+  specs_dump.txt:479:
+  specs_dump.txt:480:        for machine_name, units in machines.items():
+  specs_dump.txt:481:            all_features = []
+  specs_dump.txt:482:            for u in units:
+  specs_dump.txt:483:                feat = self._create_features(machine_name, u["unit_number"])
+  specs_dump.txt:484:                if feat is None or len(feat) < int(self.cfg.min_feature_rows_
+for_training_per_unit):
+  specs_dump.txt:485:                    continue
+  specs_dump.txt:486:                all_features.append(feat)
+  specs_dump.txt:487:
+  specs_dump.txt:488:            if not all_features:
+  specs_dump.txt:489:                continue
+  specs_dump.txt:490:
+  specs_dump.txt:491:            combined_df = pd.concat(all_features, ignore_index=True)
+  specs_dump.txt:492:            combined_df = combined_df.sort_values(["unit_key", "date"]).reset
+_index(drop=True)
+  specs_dump.txt:493:
+  specs_dump.txt:494:            combined_df["y_setting_next"] = combined_df.groupby("unit_key")["
+setting"].shift(-1)
+  specs_dump.txt:495:            combined_df["y_diff_next"] = combined_df.groupby("unit_key")["dif
+f_medals"].shift(-1)
+
+

@@ -55,3 +55,6 @@ Thumbs.db
 # ログ
 *.log
 logs/
+
+# .bak を gitignore に追加 (まだなら)
+"*.bak" | Out-File -Append -Encoding UTF8 .gitignore

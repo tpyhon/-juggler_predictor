@@ -35,14 +35,6 @@
   - master
   - shinjuku_shibuya_ikebukuro
   slug: エスパス日拓新宿歌舞伎町店
-- id: espas_shibuya
-  display_name: エスパス日拓渋谷本館
-  prefecture: 東京都
-  region: tokyo
-  note_plans:
-  - master
-  - shinjuku_shibuya_ikebukuro
-  slug: エスパス日拓渋谷本館
 - id: espas_shibuyanew
   display_name: エスパス日拓渋谷駅前新館
   prefecture: 東京都
