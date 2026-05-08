@@ -94,9 +94,12 @@ jobs:
           print(f'[OK] uploaded {count} articles')
           "
 
-      - name: Post to Note
+      - name: Post to Note (via API)
         if: ${{ inputs.skip_post != 'true' }}
-        run: uv run python scripts/post_articles_batch.py --date ${{ steps.date.outputs.value }} --price 300 --sleep 5
+        env:
+          NOTE_SESSION_V5: ${{ secrets.NOTE_SESSION_V5 }}
+        run: uv run python scripts/post_articles_via_api.py --date ${{ steps.date.outputs.value }} --sleep 5
+
 
       - name: Archive articles
         if: always()
