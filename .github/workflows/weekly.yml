@@ -2,43 +2,84 @@ name: Weekly Report
 
 on:
   schedule:
-    - cron: "0 23 * * 0"   # UTC 日曜 23:00 = JST 月曜 08:00
+    # 毎週月曜 08:00 JST = 日曜 23:00 UTC
+    - cron: "0 23 * * 0"
   workflow_dispatch:
     inputs:
-      week_end:
-        description: "週末日 YYYY-MM-DD (空欄なら昨日)"
+      target_date:
+        description: "対象週の任意の日付 (YYYY-MM-DD、空欄なら直近の完了週)"
         required: false
         default: ""
+      draft_only:
+        description: "下書き保存のみ (true/false)"
+        required: false
+        default: "false"
+
+concurrency:
+  group: weekly-report
+  cancel-in-progress: false
 
 jobs:
-  weekly-report:
+  weekly:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     env:
+      TZ: Asia/Tokyo
       R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
       R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
       R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       R2_BUCKET: ${{ secrets.R2_BUCKET }}
-      NOTE_SESSION_COOKIE: ${{ secrets.NOTE_SESSION_COOKIE }}
-      NOTE_EMAIL: ${{ secrets.NOTE_EMAIL }}
-      NOTE_PASSWORD: ${{ secrets.NOTE_PASSWORD }}
-      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-      TZ: Asia/Tokyo
+      NOTE_SESSION_V5: ${{ secrets.NOTE_SESSION_V5 }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install uv
-      - run: uv sync --frozen
 
-      - name: Build dataset (latest)
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Build dataset (R2 から取得)
         run: uv run python scripts/build_dataset.py
 
-      - name: Generate weekly report
+      - name: Download model bundle from R2
         run: |
-          if [ -n "${{ github.event.inputs.week_end }}" ]; then
-            uv run python scripts/weekly_report.py --week-end ${{ github.event.inputs.week_end }} --price 300
-          else
-            uv run python scripts/weekly_report.py --price 300
+          uv run python -c "
+          from juggler_predictor.storage.r2 import build_r2_client_from_env
+          from pathlib import Path
+          r2 = build_r2_client_from_env()
+          Path('models').mkdir(exist_ok=True)
+          obj = r2._client.get_object(Bucket=r2.config.bucket, Key='models/model_bundle.joblib')
+          Path('models/model_bundle.joblib').write_bytes(obj['Body'].read())
+          print('[OK] downloaded model_bundle.joblib')
+          "
+
+      - name: Generate and post weekly report
+        run: |
+          ARGS=""
+          if [ -n "${{ inputs.target_date }}" ]; then
+            ARGS="--date ${{ inputs.target_date }}"
           fi
+          if [ "${{ inputs.draft_only }}" = "true" ]; then
+            ARGS="$ARGS --draft-only"
+          fi
+          uv run python scripts/weekly_report.py $ARGS
+
+      - name: Archive weekly report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekly-report-${{ github.run_id }}
+          path: |
+            reports/weekly_*.md
+            logs/weekly_report_*.json
+          retention-days: 30
+          if-no-files-found: ignore
