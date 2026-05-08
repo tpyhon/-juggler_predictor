@@ -2,7 +2,6 @@ name: Daily Articles
 
 on:
   schedule:
-    # 22:30 UTC = 07:30 JST
     - cron: "30 22 * * *"
   workflow_dispatch:
     inputs:
@@ -62,6 +61,19 @@ jobs:
 
       - name: Build dataset (R2 から取得)
         run: uv run python scripts/build_dataset.py
+
+      - name: Download model bundle from R2
+        run: |
+          uv run python -c "
+          from juggler_predictor.storage.r2 import build_r2_client_from_env
+          from pathlib import Path
+          r2 = build_r2_client_from_env()
+          Path('models').mkdir(exist_ok=True)
+          obj = r2._client.get_object(Bucket=r2.config.bucket, Key='models/model_bundle.joblib')
+          data = obj['Body'].read()
+          Path('models/model_bundle.joblib').write_bytes(data)
+          print(f'[OK] downloaded model_bundle.joblib ({len(data) / 1024:.1f} KB)')
+          "
 
       - name: Generate articles (17 店舗)
         run: uv run python scripts/generate_articles_all.py --date ${{ steps.date.outputs.value }}
