@@ -58,3 +58,6 @@ logs/
 
 # .bak を gitignore に追加 (まだなら)
 "*.bak" | Out-File -Append -Encoding UTF8 .gitignore
+
+#setup系
+setup_*

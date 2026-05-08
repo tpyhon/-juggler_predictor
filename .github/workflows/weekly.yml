@@ -1,0 +1,44 @@
+name: Weekly Report
+
+on:
+  schedule:
+    - cron: "0 23 * * 0"   # UTC 日曜 23:00 = JST 月曜 08:00
+  workflow_dispatch:
+    inputs:
+      week_end:
+        description: "週末日 YYYY-MM-DD (空欄なら昨日)"
+        required: false
+        default: ""
+
+jobs:
+  weekly-report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_BUCKET: ${{ secrets.R2_BUCKET }}
+      NOTE_SESSION_COOKIE: ${{ secrets.NOTE_SESSION_COOKIE }}
+      NOTE_EMAIL: ${{ secrets.NOTE_EMAIL }}
+      NOTE_PASSWORD: ${{ secrets.NOTE_PASSWORD }}
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      TZ: Asia/Tokyo
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install uv
+      - run: uv sync --frozen
+
+      - name: Build dataset (latest)
+        run: uv run python scripts/build_dataset.py
+
+      - name: Generate weekly report
+        run: |
+          if [ -n "${{ github.event.inputs.week_end }}" ]; then
+            uv run python scripts/weekly_report.py --week-end ${{ github.event.inputs.week_end }} --price 300
+          else
+            uv run python scripts/weekly_report.py --price 300
+          fi
