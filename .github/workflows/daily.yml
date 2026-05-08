@@ -59,6 +59,10 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen
 
+      - name: Check Note session expiry (warn only)
+        continue-on-error: true
+        run: uv run python tools/check_note_session.py
+
       - name: Build dataset (R2 から取得)
         run: uv run python scripts/build_dataset.py
 

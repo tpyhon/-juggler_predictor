@@ -1,4 +1,4 @@
-"""
+﻿"""
 Note 記事を非公式 API 経由で投稿する (メンバーシップ + 公開まで全自動)。
 
 使い方:
@@ -22,6 +22,9 @@ from pathlib import Path
 
 import requests
 import yaml
+from dotenv import load_dotenv
+load_dotenv()
+
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
