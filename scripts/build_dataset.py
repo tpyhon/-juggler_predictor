@@ -48,7 +48,7 @@ def main() -> int:
     logger.info("rows=%d shops=%d dates=%d", len(df), df["shop_id"].nunique(), df["date"].nunique())
 
     logger.info("[2] 特徴量生成 (履歴特徴量含む)")
-    feat_df, meta = build_features(df, machines_config=machines_cfg)
+    feat_df, meta = build_features(df, machines_config=machines_cfg, drop_na_target=False)
     logger.info("feature_cols=%d", len(meta.feature_cols))
 
     logger.info("[3] 時系列 split")

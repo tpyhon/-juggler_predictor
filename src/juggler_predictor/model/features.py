@@ -1,4 +1,4 @@
-"""dataset DataFrame を学習用特徴量に変換する。
+﻿"""dataset DataFrame を学習用特徴量に変換する。
 
 設計 (P3b Part 2.7 履歴特徴量版):
     - target_diff: 翌日の同じ台の diff

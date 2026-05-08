@@ -1,4 +1,4 @@
-"""学習 CLI: parquet + meta.json 読み込み → 学習 → bundle 保存。"""
+﻿"""学習 CLI: parquet + meta.json 読み込み → 学習 → bundle 保存。"""
 from __future__ import annotations
 
 import argparse
