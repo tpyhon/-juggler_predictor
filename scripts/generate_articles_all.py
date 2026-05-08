@@ -1,4 +1,4 @@
-"""17店舗の記事を一括生成 (GitHub Actions 用)。
+﻿"""17店舗の記事を一括生成 (GitHub Actions 用)。
 
 generate_article.py を import して直接呼び出すのではなく subprocess で実行。
 理由: メモリリークやモデル読み込みエラーが起きても他店舗に波及しない。
@@ -56,7 +56,7 @@ def main() -> int:
             target_date,
         ]
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=180, encoding='utf-8', errors='replace')
             if result.returncode == 0:
                 logger.info("[OK] %s", sid)
                 success.append(sid)

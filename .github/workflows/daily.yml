@@ -2,11 +2,12 @@ name: Daily Articles
 
 on:
   schedule:
-    - cron: "0 22 * * *"   # UTC 22:00 = JST 07:00
+    # 22:30 UTC = 07:30 JST
+    - cron: "30 22 * * *"
   workflow_dispatch:
     inputs:
       target_date:
-        description: "投稿日 YYYY-MM-DD (空欄なら今日)"
+        description: "投稿対象日 (YYYY-MM-DD, 空欄なら本日 JST)"
         required: false
         default: ""
       skip_post:
@@ -14,11 +15,16 @@ on:
         required: false
         default: "false"
 
+concurrency:
+  group: daily-articles
+  cancel-in-progress: false
+
 jobs:
   generate-and-post:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 30
     env:
+      TZ: Asia/Tokyo
       R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
       R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
       R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
@@ -26,10 +32,20 @@ jobs:
       NOTE_SESSION_COOKIE: ${{ secrets.NOTE_SESSION_COOKIE }}
       NOTE_EMAIL: ${{ secrets.NOTE_EMAIL }}
       NOTE_PASSWORD: ${{ secrets.NOTE_PASSWORD }}
-      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-      TZ: Asia/Tokyo
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set target date
+        id: date
+        run: |
+          if [ -n "${{ inputs.target_date }}" ]; then
+            echo "value=${{ inputs.target_date }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=$(date +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+          fi
+          echo "投稿対象日: ${{ steps.date.outputs.value }}"
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -37,78 +53,44 @@ jobs:
           python-version: "3.11"
 
       - name: Install uv
-        run: pip install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
 
       - name: Install dependencies
         run: uv sync --frozen
 
-      - name: Compute target date
-        id: dates
-        run: |
-          if [ -n "${{ github.event.inputs.target_date }}" ]; then
-            TARGET="${{ github.event.inputs.target_date }}"
-          else
-            TARGET=$(date +%Y-%m-%d)
-          fi
-          INPUT=$(date -d "$TARGET -1 day" +%Y-%m-%d)
-          echo "target=$TARGET" >> $GITHUB_OUTPUT
-          echo "input=$INPUT" >> $GITHUB_OUTPUT
-          echo "投稿日: $TARGET / データ取得日: $INPUT"
-
-      - name: Step 1 - Scrape (input date = target - 1)
-        run: |
-          uv run python scripts/scrape_daily_all.py --date ${{ steps.dates.outputs.input }} --sleep 3
-        continue-on-error: true
-
-      - name: Step 2 - Build dataset
+      - name: Build dataset (R2 から取得)
         run: uv run python scripts/build_dataset.py
 
-      - name: Step 3 - Generate articles
-        run: uv run python scripts/generate_articles_all.py --date ${{ steps.dates.outputs.target }}
-        continue-on-error: true
+      - name: Generate articles (17 店舗)
+        run: uv run python scripts/generate_articles_all.py --date ${{ steps.date.outputs.value }}
 
-      - name: Step 4 - Upload articles to R2
+      - name: Upload articles to R2
         run: |
           uv run python -c "
           from pathlib import Path
           from juggler_predictor.storage.article import upload_article_from_path
-          import yaml
-          target = '${{ steps.dates.outputs.target }}'
-          shops = yaml.safe_load(Path('config/shops.yaml').read_text(encoding='utf-8'))
-          shops = shops if isinstance(shops, list) else shops.get('shops', [])
-          for s in shops:
-              p = Path(f'reports/{s["id"]}_{target}.md')
-              if p.exists():
-                  upload_article_from_path(s['id'], target, p)
-                  print(f'uploaded {p}')
-          "
-        continue-on-error: true
-
-      - name: Step 5 - Post to Note
-        if: github.event.inputs.skip_post != 'true'
-        run: |
-          uv run python scripts/post_articles_batch.py --date ${{ steps.dates.outputs.target }} --price 300 --sleep 5
-
-      - name: Notify success
-        if: success()
-        run: |
-          uv run python -c "
-          from juggler_predictor.notify.slack import notify_slack
-          notify_slack(' Daily articles workflow 完了 ${{ steps.dates.outputs.target }}')
+          date = '${{ steps.date.outputs.value }}'
+          reports = Path('reports')
+          count = 0
+          for md in reports.glob(f'*_{date}.md'):
+              shop_id = md.stem.replace(f'_{date}', '')
+              upload_article_from_path(shop_id, date, md)
+              print(f'[UPLOAD] {shop_id} -> articles/{shop_id}/{date}.md')
+              count += 1
+          print(f'[OK] uploaded {count} articles')
           "
 
-      - name: Notify failure
-        if: failure()
-        run: |
-          uv run python -c "
-          from juggler_predictor.notify.slack import notify_slack
-          notify_slack(' Daily articles workflow 失敗 ${{ steps.dates.outputs.target }}')
-          "
+      - name: Post to Note
+        if: ${{ inputs.skip_post != 'true' }}
+        run: uv run python scripts/post_articles_batch.py --date ${{ steps.date.outputs.value }} --price 300 --sleep 5
 
-      - name: Upload logs as artifact
+      - name: Archive articles
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: daily-logs-${{ steps.dates.outputs.target }}
-          path: reports/
+          name: daily-articles-${{ steps.date.outputs.value }}
+          path: reports/*_${{ steps.date.outputs.value }}.md
           retention-days: 14
+          if-no-files-found: ignore

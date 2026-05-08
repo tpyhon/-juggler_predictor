@@ -1,4 +1,4 @@
-"""17店舗の前日分を一括スクレイピング (GitHub Actions 用)。
+﻿"""17店舗の前日分を一括スクレイピング (GitHub Actions 用)。
 
 scrape_one.py を subprocess で店舗ごとに呼び出す。
 失敗店舗はログに記録して続行。
@@ -67,7 +67,7 @@ def main() -> int:
             target_date,
         ]
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300, encoding='utf-8', errors='replace')
             if result.returncode == 0:
                 logger.info("[OK] %s", sid)
                 success.append(sid)
