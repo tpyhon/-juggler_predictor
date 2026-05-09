@@ -8,20 +8,21 @@ on:
 jobs:
   retrain:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 30
     env:
       R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
       R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
       R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       R2_BUCKET: ${{ secrets.R2_BUCKET }}
-      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
       TZ: Asia/Tokyo
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install uv
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
       - run: uv sync --frozen
 
       - name: Build dataset
@@ -33,7 +34,7 @@ jobs:
       - name: Train setting classifier
         run: uv run python scripts/train_setting.py
 
-      - name: Backup model bundle to R2
+      - name: Upload model bundle to R2
         run: |
           uv run python -c "
           from datetime import date
@@ -41,16 +42,20 @@ jobs:
           from juggler_predictor.storage.r2 import build_r2_client_from_env
           c = build_r2_client_from_env()
           b = Path('models/model_bundle.joblib').read_bytes()
-          key = f'models/backup/{date.today().isoformat()}_model_bundle.joblib'
-          c.put_bytes(key, b, content_type='application/octet-stream')
-          c.put_bytes('models/latest/model_bundle.joblib', b, content_type='application/octet-stream')
-          print(f'backed up to {key}')
+          backup_key = f'models/backup/{date.today().isoformat()}_model_bundle.joblib'
+          c.put_bytes(backup_key, b, content_type='application/octet-stream')
+          print(f'[OK] backup: {backup_key} ({len(b)/1024:.1f} KB)')
+          c.put_bytes('models/model_bundle.joblib', b, content_type='application/octet-stream')
+          print(f'[OK] production: models/model_bundle.joblib')
           "
 
-      - name: Notify
+      - name: Archive model artifacts
         if: always()
-        run: |
-          uv run python -c "
-          from juggler_predictor.notify.slack import notify_slack
-          notify_slack(' Monthly retrain ${{ job.status }}')
-          "
+        uses: actions/upload-artifact@v4
+        with:
+          name: monthly-retrain-${{ github.run_id }}
+          path: |
+            models/model_bundle.joblib
+            models/setting_classifier_meta.json
+          retention-days: 90
+          if-no-files-found: ignore

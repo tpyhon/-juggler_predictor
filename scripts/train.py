@@ -56,7 +56,19 @@ def main() -> int:
 
     train_df = df[df["split"] == "train"].reset_index(drop=True)
     valid_df = df[df["split"] == "valid"].reset_index(drop=True)
-    logger.info("train=%d valid=%d", len(train_df), len(valid_df))
+    logger.info("train=%d valid=%d (NaN 除外前)", len(train_df), len(valid_df))
+
+    # target_diff / target_win が NaN の行を除外（推論専用行が混ざっているため）
+    before_train = len(train_df)
+    before_valid = len(valid_df)
+    train_df = train_df.dropna(subset=["target_diff", "target_win"]).reset_index(drop=True)
+    valid_df = valid_df.dropna(subset=["target_diff", "target_win"]).reset_index(drop=True)
+    logger.info(
+        "NaN 除外後: train=%d (-%d) valid=%d (-%d)",
+        len(train_df), before_train - len(train_df),
+        len(valid_df), before_valid - len(valid_df),
+    )
+
 
     # 欠損特徴量チェック
     missing = [c for c in feature_cols if c not in df.columns]
