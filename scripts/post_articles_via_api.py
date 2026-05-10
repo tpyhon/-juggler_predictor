@@ -50,6 +50,23 @@ PLAN_NAME_MAP = {
     "nationwide": "全国津々浦々プラン",
 }
 
+import time
+
+def publish_with_retry(session, note_id, payload, max_retries=4):
+    delays = [60, 120, 240, 480]  # 1分, 2分, 4分, 8分
+    for attempt in range(max_retries + 1):
+        r = session.put(f"https://note.com/api/v3/text_notes/{note_id}/publish", json=payload, timeout=30)
+        if r.status_code == 200:
+            return r.json()
+        if r.status_code == 422 and "しばらく時間をあけて" in r.text:
+            if attempt < max_retries:
+                wait = delays[attempt]
+                logger.warning(f"  レート制限 (422)。{wait}秒待機して再試行 [{attempt+1}/{max_retries}]")
+                time.sleep(wait)
+                continue
+        # 422 でも別メッセージ、または他のステータスは即失敗
+        raise RuntimeError(f"publish 失敗: status={r.status_code} body={r.text}")
+    raise RuntimeError("最大リトライ回数に達しました")
 
 def get_session_cookie() -> str:
     cookie = os.environ.get("NOTE_SESSION_V5")

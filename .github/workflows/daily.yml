@@ -102,7 +102,7 @@ jobs:
         if: ${{ inputs.skip_post != 'true' }}
         env:
           NOTE_SESSION_V5: ${{ secrets.NOTE_SESSION_V5 }}
-        run: uv run python scripts/post_articles_via_api.py --date ${{ steps.date.outputs.value }} --sleep 10
+        run: uv run python scripts/post_articles_via_api.py --date ${{ steps.date.outputs.value }} --sleep 30
 
 
       - name: Archive articles
