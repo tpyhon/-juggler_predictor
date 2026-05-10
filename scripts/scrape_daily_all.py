@@ -65,6 +65,7 @@ def main() -> int:
             sid,
             "--date",
             target_date,
+            "--upload-raw",
         ]
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=300, encoding='utf-8', errors='replace')

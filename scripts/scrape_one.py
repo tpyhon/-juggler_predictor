@@ -105,6 +105,12 @@ def main() -> int:
         logger.info("[4] R2 raw/ にアップロード")
         r2.put_gzip_text(R2Paths.raw_html(shop.id, args.date), html)
         logger.info("uploaded: %s", R2Paths.raw_html(shop.id, args.date))
+    
+    # 7b. R2 dataset/ にパース済み JSON をアップロード（常に実行）
+    logger.info("[5] R2 dataset/ にアップロード")
+    dataset_key = f"dataset/{shop.id}/{args.date}.json.gz"
+    r2.put_json(dataset_key, page.to_dict(), gzipped=True)
+    logger.info("uploaded: %s", dataset_key)
 
     # 8. 簡易サマリ
     print()

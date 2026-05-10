@@ -20,6 +20,7 @@ from typing import Iterable
 import pandas as pd
 
 from juggler_predictor.storage import R2Client, R2Paths
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 logger = logging.getLogger(__name__)
 
@@ -52,19 +53,12 @@ def load_dataset_from_r2(
     r2: R2Client,
     *,
     shop_ids: list[str] | None = None,
+    max_workers: int = 32,
 ) -> pd.DataFrame:
-    """R2 dataset/ 以下の json.gz を全て読み込んで DataFrame を返す。
-
-    Parameters
-    ----------
-    shop_ids:
-        ``None`` なら全店舗。指定すれば該当店舗のみ読み込む。
-    """
-    rows: list[dict] = []
-    keys: Iterable[str] = r2.list_keys("dataset/")
-    n = 0
-    for key in keys:
-        # 期待: dataset/<shop_id>/<date>.json.gz
+    """R2 dataset/ 以下の json.gz を並列で全て読み込んで DataFrame を返す。"""
+    # 1. 対象キーを先に列挙
+    target_keys: list[tuple[str, str, str]] = []  # (key, shop_id, date_str)
+    for key in r2.list_keys("dataset/"):
         parts = key.split("/")
         if len(parts) != 3:
             continue
@@ -74,18 +68,33 @@ def load_dataset_from_r2(
         if not fname.endswith(".json.gz"):
             continue
         date_str = fname.rsplit(".", 2)[0]
+        target_keys.append((key, shop_id, date_str))
 
+    logger.info("R2 dataset 並列ダウンロード開始: %d files (workers=%d)", len(target_keys), max_workers)
+
+    rows: list[dict] = []
+
+    def _fetch(item: tuple[str, str, str]) -> list[dict] | None:
+        key, shop_id, date_str = item
         try:
             page = r2.get_json(key, gzipped=True)
-        except Exception as e:  # gzip 破損などは飛ばす
+        except Exception as e:
             logger.warning("R2 read 失敗: key=%s err=%s", key, e)
-            continue
-        rows.extend(_row_dict(shop_id, date_str, page))
-        n += 1
-        if n % 100 == 0:
-            logger.info("R2 dataset loaded: %d files, %d rows", n, len(rows))
+            return None
+        return _row_dict(shop_id, date_str, page)
 
-    logger.info("R2 dataset 全 %d files, %d rows", n, len(rows))
+    completed = 0
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        futures = [ex.submit(_fetch, item) for item in target_keys]
+        for fut in as_completed(futures):
+            result = fut.result()
+            if result:
+                rows.extend(result)
+            completed += 1
+            if completed % 500 == 0:
+                logger.info("R2 dataset loaded: %d/%d files, %d rows", completed, len(target_keys), len(rows))
+
+    logger.info("R2 dataset 全 %d files, %d rows", len(target_keys), len(rows))
     return pd.DataFrame(rows)
 
 
