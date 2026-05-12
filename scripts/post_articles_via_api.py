@@ -50,24 +50,6 @@ PLAN_NAME_MAP = {
     "nationwide": "全国津々浦々プラン",
 }
 
-import time
-
-def publish_with_retry(session, note_id, payload, max_retries=4):
-    delays = [60, 120, 240, 480]  # 1分, 2分, 4分, 8分
-    for attempt in range(max_retries + 1):
-        r = session.put(f"https://note.com/api/v3/text_notes/{note_id}/publish", json=payload, timeout=30)
-        if r.status_code == 200:
-            return r.json()
-        if r.status_code == 422 and "しばらく時間をあけて" in r.text:
-            if attempt < max_retries:
-                wait = delays[attempt]
-                logger.warning(f"  レート制限 (422)。{wait}秒待機して再試行 [{attempt+1}/{max_retries}]")
-                time.sleep(wait)
-                continue
-        # 422 でも別メッセージ、または他のステータスは即失敗
-        raise RuntimeError(f"publish 失敗: status={r.status_code} body={r.text}")
-    raise RuntimeError("最大リトライ回数に達しました")
-
 def get_session_cookie() -> str:
     cookie = os.environ.get("NOTE_SESSION_V5")
     if cookie:
@@ -225,7 +207,9 @@ def load_shops() -> list[dict]:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--date", required=True, help="投稿対象日 YYYY-MM-DD")
-    ap.add_argument("--sleep", type=float, default=5.0)
+    ap.add_argument("--sleep", type=float, default=5.0, help="バッチ内の投稿間隔 (秒)")
+    ap.add_argument("--batch-size", type=int, default=5, help="連続投稿の最大件数")
+    ap.add_argument("--batch-rest", type=int, default=300, help="バッチ間の休止秒数 (デフォルト 5分)")
     ap.add_argument("--shop", default=None, help="単一店舗のみ (動作確認用)")
     ap.add_argument("--draft-only", action="store_true", help="下書き保存のみ (公開しない)")
     ap.add_argument("--dry-run", action="store_true", help="API は呼ばずに対象一覧のみ表示")
@@ -243,10 +227,20 @@ def main() -> int:
 
     mode = "dry-run" if args.dry_run else ("draft" if args.draft_only else "publish")
     logger.info(f"対象: {len(shops)} 店舗 / 日付: {args.date} / mode: {mode}")
+    if mode == "publish":
+        logger.info(
+            f"バッチ設定: {args.batch_size} 件ごとに {args.batch_rest} 秒休止 / "
+            f"投稿間隔 {args.sleep} 秒"
+        )
+
+    # 422 レート制限時のリトライ待機秒数
+    retry_delays = [180, 360, 600]  # 3分, 6分, 10分
 
     success = 0
     failure = 0
     results = []
+    posted_count = 0  # publish 成功カウント (バッチ境界判定用)
+
     for i, shop in enumerate(shops, 1):
         shop_id = shop["id"]
         shop_display = shop.get("display_name", shop_id)
@@ -265,24 +259,74 @@ def main() -> int:
             success += 1
             continue
 
+        # バッチ境界: publish モードのみ、batch_size 件投稿するごとに長時間休止
+        if (
+            mode == "publish"
+            and posted_count > 0
+            and posted_count % args.batch_size == 0
+        ):
+            logger.info(
+                f"  === バッチ境界: {args.batch_rest} 秒休止 "
+                f"({posted_count}/{len(shops)} 件 publish 済み) ==="
+            )
+            time.sleep(args.batch_rest)
+
         logger.info(f"[{i}/{len(shops)}] {shop_id} ({shop_display}) plans={shop_plans} 投稿中...")
-        try:
-            note = create_text_note(session)
-            save_draft(session, note["id"], title, body_html)
 
-            if args.draft_only:
-                logger.info(f"[OK draft] {shop_id} -> https://editor.note.com/notes/{note['id']}/edit")
-            else:
-                available = get_circle_plans(session, note["key"])
-                plan_keys = resolve_plan_keys(available, shop_plans)
-                if not plan_keys:
-                    raise RuntimeError(f"プラン解決失敗: shop_plans={shop_plans}")
-                publish(
-                    session, note["id"], note["key"], note["slug"],
-                    title, body_html, plan_keys,
+        # 422 レート制限時のリトライループ
+        plan_keys = None
+        last_error = None
+        published_ok = False
+
+        for attempt in range(len(retry_delays) + 1):
+            try:
+                note = create_text_note(session)
+                save_draft(session, note["id"], title, body_html)
+
+                if args.draft_only:
+                    logger.info(
+                        f"[OK draft] {shop_id} -> https://editor.note.com/notes/{note['id']}/edit"
+                    )
+                    published_ok = True
+                    break
+                else:
+                    available = get_circle_plans(session, note["key"])
+                    plan_keys = resolve_plan_keys(available, shop_plans)
+                    if not plan_keys:
+                        raise RuntimeError(f"プラン解決失敗: shop_plans={shop_plans}")
+                    publish(
+                        session, note["id"], note["key"], note["slug"],
+                        title, body_html, plan_keys,
+                    )
+                    logger.info(
+                        f"[OK published] {shop_id} -> https://note.com/notes/{note['key']}"
+                    )
+                    published_ok = True
+                    break
+
+            except RuntimeError as e:
+                msg = str(e)
+                last_error = msg
+                # publish の 422 + "しばらく時間をあけて" のみリトライ
+                is_rate_limit = (
+                    "status=422" in msg and "しばらく時間をあけて" in msg
                 )
-                logger.info(f"[OK published] {shop_id} -> https://note.com/notes/{note['key']}")
+                if is_rate_limit and attempt < len(retry_delays):
+                    wait = retry_delays[attempt]
+                    logger.warning(
+                        f"  レート制限 (422)。{wait} 秒待機して再試行 "
+                        f"[{attempt + 1}/{len(retry_delays)}]"
+                    )
+                    time.sleep(wait)
+                    continue
+                # リトライ対象外、または最大試行回数到達
+                break
+            except Exception as e:
+                # その他例外は即失敗
+                last_error = str(e)
+                break
 
+        if published_ok:
             results.append({
                 "shop": shop_id,
                 "id": note["id"],
@@ -291,10 +335,12 @@ def main() -> int:
                 "plan_keys": plan_keys if not args.draft_only else None,
             })
             success += 1
-        except Exception as e:
-            logger.error(f"[FAIL] {shop_id}: {e}")
+            posted_count += 1
+        else:
+            logger.error(f"[FAIL] {shop_id}: {last_error}")
             failure += 1
 
+        # 同一バッチ内の投稿間隔
         if i < len(shops):
             time.sleep(args.sleep)
 
@@ -306,6 +352,7 @@ def main() -> int:
     logger.info(f"結果ログ: {log_path}")
     logger.info("=" * 60)
     return 0 if failure == 0 else 1
+
 
 
 if __name__ == "__main__":
