@@ -6,11 +6,22 @@ Cloudflare の Managed Challenge は素の Playwright だと検知されて通�
 from __future__ import annotations
 
 import logging
+import os
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+def _ensure_ld_library_path() -> None:
+    """sudo なしでインストールした共有ライブラリ (~/.local/lib) を LD_LIBRARY_PATH に追加する。
+    Playwright が Chrome サブプロセスを spawn する前に呼ぶ必要がある。"""
+    local_lib = str(Path.home() / ".local" / "lib")
+    existing = os.environ.get("LD_LIBRARY_PATH", "")
+    if local_lib not in existing:
+        os.environ["LD_LIBRARY_PATH"] = f"{local_lib}:{existing}" if existing else local_lib
 
 DETAIL_URL_RE = re.compile(r"/\d{4}-\d{2}-\d{2}-.+?-data/?$")
 
@@ -56,6 +67,7 @@ def acquire_cookies_manual(
         2) ユーザに「東京一覧 → 店舗一覧 → 日付詳細」とクリック誘導
         3) URL が /YYYY-MM-DD-...-data/ パターンになった時点で cookie 確定
     """
+    _ensure_ld_library_path()
     from playwright.sync_api import sync_playwright
 
     cookies: list[dict[str, Any]] = []

@@ -21,6 +21,17 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+import os
+from pathlib import Path as _Path
+
+def _ensure_ld_library_path() -> None:
+    local_lib = str(_Path.home() / ".local" / "lib")
+    existing = os.environ.get("LD_LIBRARY_PATH", "")
+    if local_lib not in existing:
+        os.environ["LD_LIBRARY_PATH"] = f"{local_lib}:{existing}" if existing else local_lib
+
+_ensure_ld_library_path()
+
 from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parent.parent

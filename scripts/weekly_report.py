@@ -592,6 +592,23 @@ def publish_free(
     return r.json()
 
 
+def _is_rate_limit(e: Exception) -> bool:
+    import requests as _req
+    if isinstance(e, _req.exceptions.HTTPError):
+        resp = e.response
+        if resp is None:
+            return False
+        if resp.status_code in (429, 503):
+            return True
+        if resp.status_code == 422:
+            try:
+                body = resp.json().get("message", "") or resp.text
+            except Exception:
+                body = resp.text
+            return any(kw in body for kw in ["しばらく時間をあけて", "too many", "rate limit"])
+    return False
+
+
 def post_weekly_report(
     title: str,
     body_html: str,
@@ -602,29 +619,44 @@ def post_weekly_report(
     cookie = get_note_session_cookie()
     session = build_session(cookie)
 
-    logger.info("Step 1: text_note 作成")
-    note = create_text_note(session)
-    note_id = note["id"]
-    note_key = note["key"]
-    logger.info(f"  -> id={note_id}, key={note_key}")
+    retry_delays = [180, 360, 600]
 
-    logger.info("Step 2: 下書き保存")
-    save_draft(session, note_id, title, body_html)
+    for attempt in range(len(retry_delays) + 1):
+        try:
+            logger.info("Step 1: text_note 作成")
+            note = create_text_note(session)
+            note_id = note["id"]
+            note_key = note["key"]
+            logger.info(f"  -> id={note_id}, key={note_key}")
 
-    if draft_only:
-        logger.info("draft-only モード: 公開はスキップ")
-        return {"status": "draft", "note_id": note_id, "note_key": note_key}
+            logger.info("Step 2: 下書き保存")
+            save_draft(session, note_id, title, body_html)
 
-    logger.info("Step 3: 無料公開")
-    time.sleep(1)
-    result = publish_free(session, note_id, note_key, title, body_html, hashtags)
-    logger.info(f"  -> 公開完了: https://note.com/notes/{note_key}")
-    return {
-        "status": "published",
-        "note_id": note_id,
-        "note_key": note_key,
-        "url": f"https://note.com/notes/{note_key}",
-    }
+            if draft_only:
+                logger.info("draft-only モード: 公開はスキップ")
+                return {"status": "draft", "note_id": note_id, "note_key": note_key}
+
+            logger.info("Step 3: 無料公開")
+            time.sleep(1)
+            publish_free(session, note_id, note_key, title, body_html, hashtags)
+            logger.info(f"  -> 公開完了: https://note.com/notes/{note_key}")
+            return {
+                "status": "published",
+                "note_id": note_id,
+                "note_key": note_key,
+                "url": f"https://note.com/notes/{note_key}",
+            }
+
+        except Exception as e:
+            if _is_rate_limit(e) and attempt < len(retry_delays):
+                wait = retry_delays[attempt]
+                logger.warning(
+                    "レート制限検出 (attempt %d/%d)。%d 秒待機して再試行...",
+                    attempt + 1, len(retry_delays), wait,
+                )
+                time.sleep(wait)
+                continue
+            raise
 
 
 # ---------------------------------------------------------------------------

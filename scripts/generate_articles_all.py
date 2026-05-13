@@ -6,6 +6,7 @@ generate_article.py を import して直接呼び出すのではなく subproces
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import subprocess
 import sys
@@ -76,6 +77,15 @@ def main() -> int:
     if failure:
         for sid, reason in failure:
             logger.warning("  FAIL %s: %s", sid, reason)
+
+    summary = {
+        "date": target_date,
+        "success": success,
+        "failure": [{"shop": sid, "reason": reason} for sid, reason in failure],
+    }
+    summary_path = REPORTS / f"generate_articles_summary_{target_date}.json"
+    summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+
     return 0 if not failure else 1
 
 

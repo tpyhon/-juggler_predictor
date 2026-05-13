@@ -27,6 +27,7 @@ dependencies = [
     "requests>=2.32.0",
     "playwright-stealth>=2.0.3",
     "pyarrow>=24.0.0",
+    "reportlab>=4.5.0",
 ]
 
 [project.optional-dependencies]

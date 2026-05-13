@@ -1,13 +1,12 @@
-﻿"""
+"""
 Note 記事を非公式 API 経由で投稿する (メンバーシップ + 公開まで全自動)。
 
 使い方:
-  # ローカル動作確認
-  $env:NOTE_SESSION_V5 = "xxxxx"
   uv run python scripts/post_articles_via_api.py --date 2026-05-08 --shop espas_ueno --dry-run
   uv run python scripts/post_articles_via_api.py --date 2026-05-08 --shop espas_ueno --draft-only
   uv run python scripts/post_articles_via_api.py --date 2026-05-08 --shop espas_ueno
   uv run python scripts/post_articles_via_api.py --date 2026-05-08
+  uv run python scripts/post_articles_via_api.py --date 2026-05-08 --resume  # 途中から再開
 """
 from __future__ import annotations
 
@@ -41,7 +40,6 @@ USER_AGENT = (
     "(KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36 Edg/147.0.0.0"
 )
 
-# 店舗 yaml の note_plans (master, shinjuku_shibuya_ikebukuro 等) → note 実プラン名
 PLAN_NAME_MAP = {
     "master": "東京マスタープラン",
     "shinjuku_shibuya_ikebukuro": "新宿・渋谷・池袋プラン",
@@ -49,6 +47,34 @@ PLAN_NAME_MAP = {
     "other_kanto": "関東以外プラン",
     "nationwide": "全国津々浦々プラン",
 }
+
+# rate limit 判定: これらの HTTP ステータスはリトライ対象
+_RATE_LIMIT_STATUSES = {422, 429, 503}
+# 422 はすべてリトライ対象ではないためキーワードで絞る
+_RATE_LIMIT_KEYWORDS = ["しばらく時間をあけて", "too many", "rate limit", "slow down"]
+
+
+def _is_rate_limit(e: Exception) -> bool:
+    """レート制限エラーかどうかを判定する。"""
+    if isinstance(e, requests.exceptions.HTTPError):
+        resp = e.response
+        if resp is None:
+            return False
+        status = resp.status_code
+        if status in (429, 503):
+            return True
+        if status == 422:
+            try:
+                body_text = resp.json().get("message", "") or resp.text
+            except Exception:
+                body_text = resp.text
+            return any(kw in body_text for kw in _RATE_LIMIT_KEYWORDS)
+    if isinstance(e, RuntimeError):
+        msg = str(e)
+        if "status=422" in msg:
+            return any(kw in msg for kw in _RATE_LIMIT_KEYWORDS)
+    return False
+
 
 def get_session_cookie() -> str:
     cookie = os.environ.get("NOTE_SESSION_V5")
@@ -62,7 +88,6 @@ def get_session_cookie() -> str:
         for c in state.get("cookies", []):
             if c.get("name") == "_note_session_v5":
                 return c["value"]
-    # R2 フォールバック
     logger.info("R2 から auth/note_storage_state.json を取得")
     from juggler_predictor.storage.r2 import build_r2_client_from_env
     r2 = build_r2_client_from_env()
@@ -118,7 +143,6 @@ def save_draft(s: requests.Session, note_id: int, title: str, body_html: str) ->
 
 
 def get_circle_plans(s: requests.Session, note_key: str) -> list[dict]:
-    """サークルプラン一覧を {key, name} のリストで返す。"""
     res = s.get(
         f"{NOTE_API}/v3/memberships/circle_permissions",
         params={"note_key": note_key},
@@ -134,7 +158,6 @@ def get_circle_plans(s: requests.Session, note_key: str) -> list[dict]:
 
 
 def resolve_plan_keys(available_plans: list[dict], shop_plan_names: list[str]) -> list[str]:
-    """店舗の note_plans (例: ['master', 'shinjuku_shibuya_ikebukuro']) を実 key に変換。"""
     keys = []
     for shop_plan in shop_plan_names:
         target_name = PLAN_NAME_MAP.get(shop_plan, shop_plan)
@@ -158,13 +181,12 @@ def publish(
     body_html: str,
     circle_plan_keys: list[str],
 ) -> dict:
-    """記事を公開する (メンバーシップ限定、無料、クリエイターページ非表示)。"""
     separator = str(uuid.uuid4())
     payload = {
         "author_ids": [],
         "body_length": len(body_html),
         "disable_comment": False,
-        "exclude_from_creator_top": True,  # クリエイターページに表示 OFF
+        "exclude_from_creator_top": True,
         "exclude_ai_learning_reward": False,
         "free_body": body_html,
         "hashtags": [],
@@ -204,6 +226,54 @@ def load_shops() -> list[dict]:
     return [s for s in shops if s.get("active", True)]
 
 
+def _load_resume_log(log_path: Path, target_date: str) -> tuple[list[dict], set[str]]:
+    """投稿済みログをローカル → R2 の順で取得。(results, posted_shop_ids) を返す。"""
+    if log_path.exists():
+        try:
+            existing = json.loads(log_path.read_text(encoding="utf-8"))
+            posted = {r["shop"] for r in existing if r.get("shop") and r.get("key")}
+            logger.info("resume: ローカルログ読み込み (%d 件投稿済み)", len(posted))
+            return existing, posted
+        except Exception as e:
+            logger.warning("resume: ローカルログ読み込み失敗: %s", e)
+
+    try:
+        from juggler_predictor.storage.r2 import build_r2_client_from_env
+        r2 = build_r2_client_from_env()
+        obj = r2._client.get_object(
+            Bucket=r2.config.bucket, Key=f"post_logs/{target_date}.json"
+        )
+        existing = json.loads(obj["Body"].read().decode("utf-8"))
+        posted = {r["shop"] for r in existing if r.get("shop") and r.get("key")}
+        log_path.parent.mkdir(exist_ok=True)
+        log_path.write_text(json.dumps(existing, ensure_ascii=False, indent=2), encoding="utf-8")
+        logger.info("resume: R2 ログ読み込み (%d 件投稿済み)", len(posted))
+        return existing, posted
+    except Exception as e:
+        logger.info("resume: R2 ログなし (%s) → 全件投稿", e)
+        return [], set()
+
+
+def _save_log(log_path: Path, results: list[dict]) -> None:
+    log_path.parent.mkdir(exist_ok=True)
+    log_path.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _upload_log_to_r2(log_path: Path, target_date: str) -> None:
+    try:
+        from juggler_predictor.storage.r2 import build_r2_client_from_env
+        r2 = build_r2_client_from_env()
+        r2._client.put_object(
+            Bucket=r2.config.bucket,
+            Key=f"post_logs/{target_date}.json",
+            Body=log_path.read_bytes(),
+            ContentType="application/json",
+        )
+        logger.info("投稿ログを R2 にアップロード: post_logs/%s.json", target_date)
+    except Exception as e:
+        logger.warning("R2 アップロード失敗 (続行): %s", e)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--date", required=True, help="投稿対象日 YYYY-MM-DD")
@@ -213,6 +283,8 @@ def main() -> int:
     ap.add_argument("--shop", default=None, help="単一店舗のみ (動作確認用)")
     ap.add_argument("--draft-only", action="store_true", help="下書き保存のみ (公開しない)")
     ap.add_argument("--dry-run", action="store_true", help="API は呼ばずに対象一覧のみ表示")
+    ap.add_argument("--resume", action="store_true",
+                    help="既投稿ログ (ローカル or R2) を読み込み、投稿済みをスキップして再開")
     args = ap.parse_args()
 
     cookie = get_session_cookie()
@@ -225,58 +297,67 @@ def main() -> int:
         logger.error("対象店舗がありません")
         return 1
 
+    log_path = ROOT / "logs" / f"post_via_api_{args.date}.json"
+    results: list[dict] = []
+    posted_ids: set[str] = set()
+
+    if args.resume and not args.dry_run:
+        results, posted_ids = _load_resume_log(log_path, args.date)
+
     mode = "dry-run" if args.dry_run else ("draft" if args.draft_only else "publish")
-    logger.info(f"対象: {len(shops)} 店舗 / 日付: {args.date} / mode: {mode}")
+    logger.info("対象: %d 店舗 / 日付: %s / mode: %s", len(shops), args.date, mode)
     if mode == "publish":
         logger.info(
-            f"バッチ設定: {args.batch_size} 件ごとに {args.batch_rest} 秒休止 / "
-            f"投稿間隔 {args.sleep} 秒"
+            "バッチ設定: %d 件ごとに %d 秒休止 / 投稿間隔 %.1f 秒",
+            args.batch_size, args.batch_rest, args.sleep,
         )
 
-    # 422 レート制限時のリトライ待機秒数
-    retry_delays = [180, 360, 600]  # 3分, 6分, 10分
+    # rate limit リトライ待機秒数 (指数的に増加)
+    retry_delays = [180, 360, 600]
 
     success = 0
     failure = 0
-    results = []
-    posted_count = 0  # publish 成功カウント (バッチ境界判定用)
+    posted_count = 0
 
     for i, shop in enumerate(shops, 1):
         shop_id = shop["id"]
         shop_display = shop.get("display_name", shop_id)
         shop_plans = shop.get("note_plans", ["master"])
         md_path = ROOT / "reports" / f"{shop_id}_{args.date}.md"
+
         if not md_path.exists():
-            logger.warning(f"[SKIP] {shop_id}: {md_path.name} なし")
+            logger.warning("[SKIP] %s: %s なし", shop_id, md_path.name)
             failure += 1
+            continue
+
+        if args.resume and shop_id in posted_ids:
+            logger.info("[SKIP (resume)] %s: 投稿済み", shop_id)
+            success += 1
             continue
 
         body_html = markdown_to_note_html(md_path.read_text(encoding="utf-8"))
         title = f"【{args.date}】{shop_display}"
 
         if args.dry_run:
-            logger.info(f"[DRY] {shop_id}: title={title} plans={shop_plans} body_len={len(body_html)}")
+            logger.info("[DRY] %s: title=%s plans=%s body_len=%d",
+                        shop_id, title, shop_plans, len(body_html))
             success += 1
             continue
 
-        # バッチ境界: publish モードのみ、batch_size 件投稿するごとに長時間休止
-        if (
-            mode == "publish"
-            and posted_count > 0
-            and posted_count % args.batch_size == 0
-        ):
+        # バッチ境界: publish モードのみ
+        if mode == "publish" and posted_count > 0 and posted_count % args.batch_size == 0:
             logger.info(
-                f"  === バッチ境界: {args.batch_rest} 秒休止 "
-                f"({posted_count}/{len(shops)} 件 publish 済み) ==="
+                "  === バッチ境界: %d 秒休止 (%d/%d 件 publish 済み) ===",
+                args.batch_rest, posted_count, len(shops),
             )
             time.sleep(args.batch_rest)
 
-        logger.info(f"[{i}/{len(shops)}] {shop_id} ({shop_display}) plans={shop_plans} 投稿中...")
+        logger.info("[%d/%d] %s (%s) plans=%s 投稿中...", i, len(shops), shop_id, shop_display, shop_plans)
 
-        # 422 レート制限時のリトライループ
         plan_keys = None
         last_error = None
         published_ok = False
+        note: dict = {}
 
         for attempt in range(len(retry_delays) + 1):
             try:
@@ -284,75 +365,61 @@ def main() -> int:
                 save_draft(session, note["id"], title, body_html)
 
                 if args.draft_only:
-                    logger.info(
-                        f"[OK draft] {shop_id} -> https://editor.note.com/notes/{note['id']}/edit"
-                    )
-                    published_ok = True
-                    break
-                else:
-                    available = get_circle_plans(session, note["key"])
-                    plan_keys = resolve_plan_keys(available, shop_plans)
-                    if not plan_keys:
-                        raise RuntimeError(f"プラン解決失敗: shop_plans={shop_plans}")
-                    publish(
-                        session, note["id"], note["key"], note["slug"],
-                        title, body_html, plan_keys,
-                    )
-                    logger.info(
-                        f"[OK published] {shop_id} -> https://note.com/notes/{note['key']}"
-                    )
+                    logger.info("[OK draft] %s -> https://editor.note.com/notes/%s/edit",
+                                shop_id, note["id"])
                     published_ok = True
                     break
 
-            except RuntimeError as e:
-                msg = str(e)
-                last_error = msg
-                # publish の 422 + "しばらく時間をあけて" のみリトライ
-                is_rate_limit = (
-                    "status=422" in msg and "しばらく時間をあけて" in msg
-                )
-                if is_rate_limit and attempt < len(retry_delays):
+                available = get_circle_plans(session, note["key"])
+                plan_keys = resolve_plan_keys(available, shop_plans)
+                if not plan_keys:
+                    raise RuntimeError(f"プラン解決失敗: shop_plans={shop_plans}")
+                publish(session, note["id"], note["key"], note["slug"], title, body_html, plan_keys)
+                logger.info("[OK published] %s -> https://note.com/notes/%s", shop_id, note["key"])
+                published_ok = True
+                break
+
+            except Exception as e:
+                last_error = str(e)
+                if _is_rate_limit(e) and attempt < len(retry_delays):
                     wait = retry_delays[attempt]
                     logger.warning(
-                        f"  レート制限 (422)。{wait} 秒待機して再試行 "
-                        f"[{attempt + 1}/{len(retry_delays)}]"
+                        "  レート制限検出 (attempt %d/%d)。%d 秒待機して再試行... [%s]",
+                        attempt + 1, len(retry_delays), wait, type(e).__name__,
                     )
                     time.sleep(wait)
                     continue
-                # リトライ対象外、または最大試行回数到達
-                break
-            except Exception as e:
-                # その他例外は即失敗
-                last_error = str(e)
+                logger.debug("  リトライ対象外エラー: %s", last_error)
                 break
 
         if published_ok:
             results.append({
                 "shop": shop_id,
                 "id": note["id"],
-                "key": note["key"],
+                "key": note.get("key", ""),
                 "title": title,
                 "plan_keys": plan_keys if not args.draft_only else None,
             })
+            _save_log(log_path, results)  # 逐次保存: 途中失敗しても再開可能
             success += 1
             posted_count += 1
         else:
-            logger.error(f"[FAIL] {shop_id}: {last_error}")
+            logger.error("[FAIL] %s: %s", shop_id, last_error)
             failure += 1
 
-        # 同一バッチ内の投稿間隔
         if i < len(shops):
             time.sleep(args.sleep)
 
-    log_path = ROOT / "logs" / f"post_via_api_{args.date}.json"
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    log_path.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
+    _save_log(log_path, results)
+
+    if mode == "publish" and results:
+        _upload_log_to_r2(log_path, args.date)
+
     logger.info("=" * 60)
-    logger.info(f"[POST SUMMARY] success={success} / failure={failure}")
-    logger.info(f"結果ログ: {log_path}")
+    logger.info("[POST SUMMARY] success=%d / failure=%d", success, failure)
+    logger.info("結果ログ: %s", log_path)
     logger.info("=" * 60)
     return 0 if failure == 0 else 1
-
 
 
 if __name__ == "__main__":

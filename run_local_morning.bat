@@ -1,14 +1,8 @@
 @echo off
+REM 朝バッチ: スクレイピング (毎朝 07:00 JST 推奨)
+REM タスクスケジューラから呼び出す。ログは WSL 側の logs/ に保存される。
 setlocal
 
-cd /d "C:\Users\takum\Desktop\code\juggler_predictor"
-
-if not exist logs mkdir logs
-
-for /f %%i in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd"') do set TODAY=%%i
-
-set PATH=%USERPROFILE%\.local\bin;%PATH%
-
-uv run python tools\local_morning.py >> logs\local_morning_%TODAY%.log 2>&1
+wsl --cd /home/takum/juggler_predictor bash -lc "uv run python tools/local_morning.py"
 
 exit /b %ERRORLEVEL%
