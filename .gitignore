@@ -37,6 +37,7 @@ data/
 dataset/
 pred_cache/
 articles/
+reports/
 
 # Playwright
 playwright-report/
