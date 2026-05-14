@@ -1,0 +1,27 @@
+{
+  "date": "2026-05-14",
+  "success": [
+    "kingsetagaya",
+    "messekichijoji",
+    "godonsoshigaya",
+    "espas_seibushinjuku",
+    "espas_kabukicho",
+    "espas_shibuyanew",
+    "maruhan_shinjuku",
+    "maruhan_ikebukuro",
+    "espas_akihabara",
+    "mega_chofu",
+    "espas_takadanobaba",
+    "granpaNakano",
+    "rakuen_shibuya",
+    "iidabashiPresas",
+    "espas_uenonew",
+    "espas_ueno"
+  ],
+  "failure": [
+    {
+      "shop": "sengawaUno",
+      "reason": "rc=1"
+    }
+  ]
+}

@@ -8,8 +8,9 @@ import pandas as pd
 
 from juggler_predictor.model.setting_predictor import p_high_to_stars
 
-P_HIGH_GO_THRESHOLD = 0.50
-GO_MIN_COUNT = 5
+EXPECTED_SETTING_GO_THRESHOLD = 3.5
+GO_RATIO_THRESHOLD = 0.25
+GO_MIN_COUNT = 3
 
 
 def render_article(
@@ -30,10 +31,10 @@ def render_article(
 
     rows = rows.sort_values("score_a", ascending=False).reset_index(drop=True)
     n_total = len(rows)
-    n_high = int((rows["p_high"] >= P_HIGH_GO_THRESHOLD).sum())
+    n_high = int((rows["expected_setting"] >= EXPECTED_SETTING_GO_THRESHOLD).sum())
     p_high_max = float(rows["p_high"].max())
     star = p_high_to_stars(p_high_max)
-    is_go = n_high >= GO_MIN_COUNT
+    is_go = n_high >= GO_MIN_COUNT and (n_high / n_total) >= GO_RATIO_THRESHOLD
 
     parts: list[str] = []
     parts.append(_render_header(shop_display_name, target_date, input_date, star, is_go, n_high, n_total))
@@ -41,7 +42,7 @@ def render_article(
     parts.append(_render_top10(rows.head(10)))
     parts.append(_render_top1_reason(rows.iloc[0]))
     if not is_go:
-        parts.append(_render_no_go(n_high, p_high_max))
+        parts.append(_render_no_go(n_high, n_total, p_high_max))
     parts.append(_render_machine_detail(rows))
     parts.append(_render_disclaimer())
     return "\n\n".join(parts) + "\n"
@@ -67,10 +68,10 @@ def _render_summary(rows: pd.DataFrame, n_high: int, n_total: int, p_high_max: f
     expected_mean = float(rows["expected_setting"].mean()) if "expected_setting" in rows else 0.0
     return (
         "## 📊 本日のサマリー\n\n"
-        f"- 高設定期待台 (p_high ≥ {P_HIGH_GO_THRESHOLD:.2f}): **{n_high} / {n_total} 台 ({pct:.1f}%)**\n"
+        f"- 高設定期待台 (期待設定 ≥ {EXPECTED_SETTING_GO_THRESHOLD:.1f}): **{n_high} / {n_total} 台 ({pct:.1f}%)**\n"
         f"- 店内最大 p_high: **{p_high_max:.1%}**\n"
         f"- 平均期待設定: **{expected_mean:.2f}**\n"
-        f"- GO/NO-GO 基準: 高設定期待台が {GO_MIN_COUNT} 台以上で GO"
+        f"- GO/NO-GO 基準: 高設定期待台が {GO_RATIO_THRESHOLD:.0%} 以上かつ {GO_MIN_COUNT} 台以上で GO"
     )
 
 
@@ -102,10 +103,11 @@ def _render_top1_reason(top1: pd.Series) -> str:
     )
 
 
-def _render_no_go(n_high: int, p_high_max: float) -> str:
+def _render_no_go(n_high: int, n_total: int, p_high_max: float) -> str:
+    ratio = n_high / n_total if n_total else 0.0
     return (
         "## ⚠️ NO-GO 判定理由\n\n"
-        f"- 高設定期待台が **{n_high} 台**しかなく、基準 {GO_MIN_COUNT} 台に届きません\n"
+        f"- 高設定期待台 (期待設定 ≥ {EXPECTED_SETTING_GO_THRESHOLD:.1f}) が **{n_high} / {n_total} 台 ({ratio:.1%})** で基準 {GO_RATIO_THRESHOLD:.0%} 未満または {GO_MIN_COUNT} 台未満\n"
         f"- 店内最大 p_high が {p_high_max:.1%} に留まる\n"
         "- 本日の来店は見送り、別店舗の検討を推奨します"
     )
@@ -116,7 +118,7 @@ def _render_machine_detail(rows: pd.DataFrame) -> str:
     for machine, g in rows.groupby("machine_name"):
         g = g.sort_values("p_high", ascending=False)
         n = len(g)
-        n_high = int((g["p_high"] >= P_HIGH_GO_THRESHOLD).sum())
+        n_high = int((g["expected_setting"] >= EXPECTED_SETTING_GO_THRESHOLD).sum())
         avg_p_high = float(g["p_high"].mean())
         lines.append(f"### {machine} ({n}台 / 高設定期待 {n_high}台 / 平均p_high {avg_p_high:.1%})\n")
         for _, r in g.head(5).iterrows():
