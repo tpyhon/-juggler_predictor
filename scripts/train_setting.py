@@ -25,6 +25,52 @@ DATA = ROOT / "data" / "dataset.parquet"
 BUNDLE = ROOT / "models" / "model_bundle.joblib"
 META = ROOT / "models" / "setting_classifier_meta.json"
 
+MIN_SHOP_TRAIN_ROWS = 200
+
+
+def _train_shop_classifier(
+    df_train: pd.DataFrame,
+    df_valid: pd.DataFrame,
+    feat_setting: list[str],
+    shop_id: str,
+) -> "LGBMClassifier | None":
+    """1店舗分の設定分類器を学習。訓練サンプルが MIN_SHOP_TRAIN_ROWS 未満なら None を返す。"""
+    t = df_train[df_train["shop_id"] == shop_id].dropna(subset=["y_setting_next"])
+    v = df_valid[df_valid["shop_id"] == shop_id].dropna(subset=["y_setting_next"])
+    if len(t) < MIN_SHOP_TRAIN_ROWS:
+        return None
+
+    y_t = t["y_setting_next"].astype(int).values - 1
+    X_t = t[feat_setting].astype(float).values
+
+    clf = LGBMClassifier(
+        objective="multiclass",
+        num_class=6,
+        class_weight="balanced",
+        n_estimators=500,
+        learning_rate=0.05,
+        num_leaves=15,
+        min_child_samples=10,
+        reg_alpha=0.1,
+        reg_lambda=0.1,
+        random_state=42,
+        n_jobs=-1,
+        verbose=-1,
+    )
+
+    if len(v) >= 20:
+        y_v = v["y_setting_next"].astype(int).values - 1
+        X_v = v[feat_setting].astype(float).values
+        clf.fit(
+            X_t, y_t,
+            eval_set=[(X_v, y_v)],
+            callbacks=[early_stopping(30, verbose=False), log_evaluation(0)],
+        )
+    else:
+        clf.fit(X_t, y_t)
+
+    return clf
+
 
 def main() -> None:
     if not DATA.exists():
@@ -126,8 +172,58 @@ def main() -> None:
 
     bundle["setting_classifier"] = clf
     bundle["setting_features"] = feat_setting
+
+    # --- 店舗別分類器 (グローバルより AUC が高い店舗のみ採用) ---
+    shop_models: dict[str, dict] = {}
+    adopted = 0
+    skipped_data = 0
+    skipped_worse = 0
+    for sid in sorted(df_train["shop_id"].dropna().unique()):
+        shop_clf = _train_shop_classifier(df_train, df_valid, feat_setting, sid)
+        if shop_clf is None:
+            skipped_data += 1
+            logger.info("[shop model] %s: skipped (train rows < %d)", sid, MIN_SHOP_TRAIN_ROWS)
+            continue
+
+        sub = df_valid[df_valid["shop_id"] == sid].dropna(subset=["y_setting_next"])
+        if len(sub) < 30:
+            skipped_data += 1
+            logger.info("[shop model] %s: skipped (valid rows < 30)", sid)
+            continue
+
+        X_sub = sub[feat_setting].astype(float).values
+        y_sub = (sub["y_setting_next"].astype(int).values >= 4).astype(int)
+        if y_sub.sum() == 0 or y_sub.sum() == len(y_sub):
+            skipped_data += 1
+            logger.info("[shop model] %s: skipped (no class variation in valid)", sid)
+            continue
+
+        global_auc = roc_auc_score(y_sub, clf.predict_proba(X_sub)[:, 3:].sum(axis=1))
+        shop_auc   = roc_auc_score(y_sub, shop_clf.predict_proba(X_sub)[:, 3:].sum(axis=1))
+
+        if shop_auc > global_auc:
+            shop_models[sid] = {
+                "setting_classifier": shop_clf,
+                "setting_features": feat_setting,
+            }
+            adopted += 1
+            logger.info(
+                "[shop model] %s: adopted (iter=%s, shop_AUC=%.4f > global_AUC=%.4f, +%.4f)",
+                sid, shop_clf.best_iteration_, shop_auc, global_auc, shop_auc - global_auc,
+            )
+        else:
+            skipped_worse += 1
+            logger.info(
+                "[shop model] %s: rejected (iter=%s, shop_AUC=%.4f <= global_AUC=%.4f, %.4f)",
+                sid, shop_clf.best_iteration_, shop_auc, global_auc, shop_auc - global_auc,
+            )
+    bundle["shop_models"] = shop_models
+
     joblib.dump(bundle, BUNDLE)
-    logger.info("setting_classifier saved into %s", BUNDLE)
+    logger.info(
+        "global + %d shop models saved (adopted=%d rejected=%d skipped=%d) into %s",
+        len(shop_models), adopted, skipped_worse, skipped_data, BUNDLE,
+    )
 
     META.parent.mkdir(parents=True, exist_ok=True)
     META.write_text(

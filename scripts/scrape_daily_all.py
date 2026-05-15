@@ -1,4 +1,4 @@
-﻿"""17店舗の前日分を一括スクレイピング (GitHub Actions 用)。
+﻿"""19店舗の前日分を一括スクレイピング (GitHub Actions 用)。
 
 scrape_one.py を subprocess で店舗ごとに呼び出す。
 失敗店舗はログに記録して続行。

@@ -79,7 +79,7 @@ jobs:
           print(f'[OK] downloaded model_bundle.joblib ({len(data) / 1024:.1f} KB)')
           "
 
-      - name: Generate articles (17 店舗)
+      - name: Generate articles (19 店舗)
         run: uv run python scripts/generate_articles_all.py --date ${{ steps.date.outputs.value }}
 
       - name: Upload articles to R2

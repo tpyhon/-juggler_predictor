@@ -62,8 +62,16 @@ def main() -> None:
     bundle = joblib.load(BUNDLE)
     if "setting_classifier" not in bundle:
         raise SystemExit("setting_classifier が bundle にありません。train_setting.py を実行してください。")
-    clf = bundle["setting_classifier"]
-    feat_setting = bundle.get("setting_features", bundle["feature_cols"])
+
+    shop_entry = bundle.get("shop_models", {}).get(args.shop)
+    if shop_entry:
+        clf = shop_entry["setting_classifier"]
+        feat_setting = shop_entry["setting_features"]
+        logger.info("shop-specific classifier used for %s", args.shop)
+    else:
+        clf = bundle["setting_classifier"]
+        feat_setting = bundle.get("setting_features", bundle["feature_cols"])
+        logger.info("global classifier used for %s (no shop model)", args.shop)
 
     # 不足列があれば 0 埋め
     for c in feat_setting:

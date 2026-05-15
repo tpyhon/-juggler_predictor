@@ -123,3 +123,18 @@
   note_plans:
   - master
   slug: エスパス日拓上野本館
+- id: amuse_asakusa
+  display_name: アミューズ浅草店
+  prefecture: 東京都
+  region: tokyo
+  note_plans:
+  - master
+  slug: アミューズ浅草店
+- id: rakuen_ikebukuro
+  display_name: 楽園池袋店
+  prefecture: 東京都
+  region: tokyo
+  note_plans:
+  - master
+  - shinjuku_shibuya_ikebukuro
+  slug: 楽園池袋店
